@@ -1,1 +1,64 @@
+# Claude Code
 .claude/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+
+# Rust / Cargo
+target/
+**/target/
+src-tauri/target/
+# Cargo.lock intentionally NOT ignored (this is an application, not a library)
+
+# Tauri
+src-tauri/gen/
+src-tauri/Cargo.lock.bak
+
+# Node / React frontend
+node_modules/
+dist/
+dist-ssr/
+build/
+.vite/
+.turbo/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# Python (mitmproxy helper)
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Logs
+*.log
+logs/
+
+# OS-generated / temp
+*.tmp
+*.bak
+.cache/
