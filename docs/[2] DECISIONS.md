@@ -63,14 +63,14 @@ Lightweight ADR log, one entry per decision that took real deliberation to reach
 ---
 
 ### ADR-009: Revised stack — FastAPI backend + React frontend
-**Status:** Accepted, supersedes ADR-008
-**Decision:** Full Python backend (FastAPI, REST + WebSocket) with a React frontend, run locally rather than shipped as a native `.app`.
-**Why:** Debuggability, for a project being built incrementally rather than shipped once — standard browser devtools, hot reload, and Python's ordinary debugging tools matter more here than native polish. It also collapses the earlier hybrid design: mitmproxy no longer needs to be quarantined behind a language boundary inside a Swift app, since the whole backend is already Python.
-**What this costs, explicitly (don't rediscover this later):**
-- The Mac App Store / notarized native distribution path is gone; this ships as source you run locally, not a signed app (see `PERMISSIONS_AND_PLATFORM.md`).
-- The Network Extension upgrade path for `TrafficProvider`, previously listed as a "known future cost" in the project report, is no longer achievable as a pure Python component — `NetworkExtension.framework` entitlements go to signed native apps, not Python processes. It isn't permanently impossible, but it now requires introducing a separate, separately-signed native helper alongside this stack rather than a Python-only upgrade; the mitmproxy-based approach is this project's practical ceiling for traffic capture unless and until that helper gets built.
-- A FastAPI server introduces an actual local network-facing surface that a native SwiftUI app never had — must be bound to `127.0.0.1` and CORS-locked (see `PRIVACY_AND_SECURITY.md`); this risk didn't exist before this decision.
-**What doesn't change:** every architectural decision above this one (ADR-001 through ADR-007) — the provider pattern, the Observation Engine, the data model, the redaction rules, and the observation contract are all language-agnostic and carry over unmodified.
+**Status:** Superseded by ADR-013
+**Decision (at the time):** Full Python backend (FastAPI, REST + WebSocket) with a React frontend, run locally rather than shipped as a native `.app`.
+**Why (at the time):** Debuggability, for a project being built incrementally rather than shipped once — standard browser devtools, hot reload, and Python's ordinary debugging tools matter more here than native polish. It also collapsed the earlier hybrid design: mitmproxy no longer needed to be quarantined behind a language boundary inside a Swift app, since the whole backend was already Python.
+**What this cost, explicitly (don't rediscover this later):**
+- The Mac App Store / notarized native distribution path was gone; this shipped as source you run locally, not a signed app (see `PERMISSIONS_AND_PLATFORM.md`).
+- The Network Extension upgrade path for `TrafficProvider`, previously listed as a "known future cost" in the project report, was no longer achievable as a pure Python component — `NetworkExtension.framework` entitlements go to signed native apps, not Python processes.
+- A FastAPI server introduced an actual local network-facing surface that a native SwiftUI app never had — bound to `127.0.0.1` and CORS-locked (see `PRIVACY_AND_SECURITY.md`); this risk didn't exist before this decision.
+**What changed:** See ADR-013 — the distribution and system-API costs above turned out to matter enough, once the project's actual end goal (a real distributable app, not just a locally-run script) was made explicit, to justify a second stack pivot before any code was written.
 
 ---
 
@@ -107,3 +107,21 @@ Lightweight ADR log, one entry per decision that took real deliberation to reach
 - Added a fourth mandatory integration test: a provider's `transient_failure` must never be misread by the lifecycle-diffing logic as every tracked connection disappearing at once.
 - Consolidated "the Engine is the only component permitted to create or mutate domain state" into one explicit rule in `ARCHITECTURE.md`, rather than leaving it inferable from several scattered notes.
 **Why:** all of the above are either finishing a fix from ADR-011 that was applied inconsistently, or tightening wording to match what the rest of the document set already implied. None of it introduces new capability surface or a new document.
+
+---
+
+### ADR-013: Second revised stack — Tauri (Rust core) + React frontend, before any code was written
+**Status:** Accepted, supersedes ADR-009
+**Decision:** Replace the FastAPI/uvicorn backend with a Rust core running inside a Tauri shell. React is kept as the frontend, unmodified in framework choice — it now renders inside Tauri's native webview instead of a browser tab, and talks to the Rust core over Tauri's `invoke` (command/response) and `event` (push) IPC bridge instead of REST/WebSocket over HTTP. The mitmproxy-based `TrafficProvider` helper is unchanged: still a spawned Python subprocess, still talking to the core over a local socket with JSON, exactly as ADR-009 already designed it — this decision does not touch traffic capture at all.
+**Why:** Once "eventually a real distributable app" was confirmed as the actual end goal rather than "a script two people run locally," several of ADR-009's explicit costs stopped being acceptable:
+- **Distribution.** A Tauri app compiles to a single native binary that can be code-signed and notarized like any other Mac app, using Tauri's built-in tooling. The FastAPI stack had no credible path to this short of wrapping a Python interpreter and a Node-built frontend into something resembling an installer — a path nobody was going to actually walk.
+- **System API access.** `SocketProvider`/`ProcessProvider` no longer need to shell out to `lsof`/`psutil` and parse text output. Rust crates (`sysinfo`, `netstat2`) and, where needed, direct FFI to macOS's `libproc` APIs give the same information more robustly and without a subprocess-per-poll cost.
+- **Local network surface, eliminated rather than mitigated.** Tauri's IPC bridge is not a network socket — there is nothing to bind, no CORS to restrict, no access log that could leak query-string secrets outside the Redactor's control. ADR-009 documented that surface as a cost to manage; this removes it as a category, not just a risk to configure carefully.
+- **A sanctioned privilege-elevation path.** A signed native app can use macOS's Service Management framework (`SMAppService`/`SMJobBless`) to install a small privileged helper with a real authorization prompt, for the same-user-vs-other-users' processes problem in `PERMISSIONS_AND_PLATFORM.md`. A bare Python script's only option was "the user runs it with `sudo`."
+- **Frontend investment preserved.** React, its component structure, and the API-shaped data contracts already designed in `DATA_MODEL.md` carry over essentially unchanged — this is a transport-layer and backend-language change, not a UI rewrite.
+**What this costs, explicitly (don't rediscover this later):**
+- Rust has a real learning curve (ownership/borrowing, `Result`/`Option`, `tokio` async) — expect Phase 0.1 to be slower going than the equivalent Python would have been, purely on language-ramp-up grounds, independent of the project's own difficulty.
+- Backend iteration is no longer hot-reload-instant; Rust recompiles, even incremental ones, are slower than Python's edit-and-rerun loop. The React half still hot-reloads via Vite regardless.
+- The Network Extension upgrade path is **still** not a pure Rust/Tauri thing — `NEPacketTunnelProvider`/`NEFilterDataProvider` are Apple frameworks that expect a Swift/ObjC extension target. What changes is that this extension can now be embedded inside an already-native, already-signed app bundle using Apple's normal tooling, rather than needing to be bolted onto "a folder you run with `uvicorn`" from scratch. The mitmproxy-based approach remains this project's practical ceiling for traffic capture unless and until that extension gets built — this decision does not move that ceiling.
+- Switching stacks does **not** reduce Phase 0.3's actual risk (mitmproxy reliability, certificate pinning defeating capture on hardened targets) at all — that risk is orthogonal to backend language and stays exactly as documented in `PERMISSIONS_AND_PLATFORM.md`.
+**What doesn't change:** every architectural decision above this one except ADR-009's specific stack choice — ADR-001 through ADR-007, ADR-010, ADR-011, and ADR-012 are all language-agnostic (the provider pattern, the Observation Engine, the data model, the redaction rules, the observation contract, and the `NetworkTestTarget`-centered testing strategy) and carry over unmodified. `ARCHITECTURE.md`, `DATA_MODEL.md`, `OBSERVATION_CONTRACT.md`, `PRIVACY_AND_SECURITY.md`, `PERMISSIONS_AND_PLATFORM.md`, `TESTING_STRATEGY.md`, and `TODO.md` are updated alongside this ADR to reflect the new stack; see each for specifics.

@@ -31,12 +31,13 @@ This is not a style preference — it's the difference between a session file on
 1. **Capture-time redaction (highly sensitive only)** — irreversible, applied before a `RawHTTPRequest`/`RawHTTPResponse` object even exists for these fields. Nothing downstream — display, storage, export, "show anyway" — can ever see these values, because they were never captured in retrievable form.
 2. **Persistence/export redaction (potentially sensitive tier)** — mandatory, irreversible, applied to everything written to the Session Store or any export file, regardless of what's currently toggled on screen in the live UI. A "show anyway" preference reveals the in-memory `Raw*` object for display only and must never propagate to disk.
 
-## FastAPI/React-specific rules (new since the stack pivot — a native app didn't need these)
+## Tauri/React-specific rules
 
-- Bind the FastAPI server to `127.0.0.1` only; never `0.0.0.0`.
-- Restrict CORS to the frontend's own origin explicitly — don't use a wildcard.
-- Disable or reconfigure uvicorn's default access logging so that request URLs (which can carry query-string secrets) aren't written to a plaintext log file by the web framework itself, bypassing the Redactor entirely. This is a real, specific risk this stack introduces that a native app never had: the transport layer has its own logging behavior independent of application code.
-- No captured request/response body or header content goes into `print()`/application logging at any log level — only into the Redactor's own controlled output paths.
+The FastAPI-era stack (`DECISIONS.md` ADR-009) required binding a server to `127.0.0.1`, locking down CORS, and reconfiguring uvicorn's access logging — all to manage a local network surface that a native app never had. ADR-013 removed that surface rather than continuing to manage it: Tauri's `invoke`/`event` IPC bridge is not a network socket, so there is no port to bind and no CORS policy to restrict. What still applies to this stack specifically:
+
+- Tauri's command allowlist/capabilities configuration (`tauri.conf.json`) should expose only the specific commands the frontend actually needs — not a blanket "allow everything" capability set. This is the Tauri-native equivalent of the old CORS/binding discipline: restrict what the webview is permitted to reach into, even though the mechanism is different.
+- The mitmproxy helper's local IPC channel to the Rust core is process-local and not reachable from outside the machine; it carries no user-facing surface and needs no additional locking-down beyond what `PERMISSIONS_AND_PLATFORM.md` already assumes about the helper process itself.
+- No captured request/response body or header content goes into `println!`/`log`/application logging at any level — only into the Redactor's own controlled output paths. Rust's own logging crates (`log`, `tracing`) have the same "the transport/framework logs independently of your application code" risk that uvicorn had; audit whatever logging is configured for the Tauri shell and the mitmproxy helper for the same reason the old uvicorn access-log risk was called out.
 
 ## Storage & export
 
@@ -49,4 +50,4 @@ This is not a style preference — it's the difference between a session file on
 
 ## What this document explicitly forbids, permanently
 
-No replay, resend, or injection of captured requests, anywhere in the stack, regardless of feature request. No raw-credential "developer mode" that writes unredacted data to disk. No FastAPI server reachable from anything other than localhost without a deliberate, separately-reviewed decision to change that.
+No replay, resend, or injection of captured requests, anywhere in the stack, regardless of feature request. No raw-credential "developer mode" that writes unredacted data to disk. No network-facing server of any kind added to this stack without a deliberate, separately-reviewed decision — the whole point of the Tauri IPC boundary (`ARCHITECTURE.md`) is that this app has no such surface today.

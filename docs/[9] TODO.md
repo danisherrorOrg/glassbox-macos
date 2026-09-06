@@ -1,6 +1,6 @@
 # TODO / Roadmap — Process Network Inspector
 
-**v4 — migrated to the FastAPI + React stack (ADR-009) and updated for the data-model/status consistency pass (ADR-011).** Earlier versions of this file described Xcode/SwiftUI/Swift-concurrency tasks that no longer apply — see `docs/DECISIONS.md` for why the stack changed. Ordered so each phase produces something demoable before the next one starts — don't jump ahead to a later phase's checkboxes while earlier ones are unchecked.
+**v5 — migrated to the Tauri (Rust) + React stack (ADR-013).** Earlier versions of this file described FastAPI/uvicorn tasks, and before that Xcode/SwiftUI/Swift-concurrency tasks, that no longer apply — see `docs/DECISIONS.md` for why the stack changed each time. Ordered so each phase produces something demoable before the next one starts — don't jump ahead to a later phase's checkboxes while earlier ones are unchecked.
 
 Two things stay true across every phase below, not just the ones that mention them: **redaction of highly-sensitive fields happens at capture time and never produces a raw value anywhere; potentially-sensitive fields are redacted before anything touches disk, not just before it touches the screen** (`docs/PRIVACY_AND_SECURITY.md`), and **unknown/denied/stale is never displayed as empty/zero** — see the Observation Contract tasks below.
 
@@ -8,12 +8,12 @@ Two things stay true across every phase below, not just the ones that mention th
 
 ## Phase 0 — Foundation (project setup, not a product milestone)
 
-- [ ] Set up the backend project: Python, FastAPI, a `pyproject.toml`/`requirements.txt`, an ASGI entrypoint (`uvicorn`)
-- [ ] Set up the frontend project: React (via Vite or similar), talking to the backend's REST/WebSocket endpoints
-- [ ] `git init`, initial commit, `.gitignore` for Python + Node
-- [ ] Set up folder structure: `backend/` (`app/`, `models/`, `providers/`, `engine/`, `utils/`, `tests/`), `frontend/` (`src/components/`, `src/api/`)
-- [ ] **Permissions spike (do this before writing any provider code):** confirm exactly what an ordinary Python process can read about other processes' sockets, and what `lsof`/`psutil` refuse without elevation. Write findings into `docs/PERMISSIONS_AND_PLATFORM.md`'s VERIFIED section — this determines how much of Phase 0.1 is trivial vs. blocked.
-- [ ] Decide and configure the FastAPI server's binding now, not later: `127.0.0.1` only, CORS restricted to the frontend's own origin (`docs/PRIVACY_AND_SECURITY.md`) — this is a default to get right from the first commit, not a hardening pass to do at the end.
+- [ ] Set up the Tauri project: `cargo tauri init`, a `Cargo.toml` for the Rust core, `tauri.conf.json` configured with a minimal command allowlist/capabilities set (not "allow everything")
+- [ ] Set up the frontend project: React (via Vite, Tauri's default template integration), talking to the Rust core only via `invoke`/`event` — no REST/WebSocket endpoints to stand up
+- [ ] `git init`, initial commit, `.gitignore` for Rust + Node (`target/`, `node_modules/`, `dist/`)
+- [ ] Set up folder structure: `src-tauri/` (`src/` with `models/`, `providers/`, `engine/`, `commands/`, and `tests/`), `src/` for the React frontend (`components/`, `api/` for the `invoke` wrapper functions)
+- [ ] **Permissions spike (do this before writing any provider code):** confirm exactly what an ordinary, unprivileged process can read about other processes' sockets via `sysinfo`/`netstat2`, and what the underlying `libproc` calls refuse without elevation. Write findings into `docs/PERMISSIONS_AND_PLATFORM.md`'s VERIFIED section — this determines how much of Phase 0.1 is trivial vs. blocked.
+- [ ] Decide the Tauri capabilities/allowlist scope now, not later: only the specific commands the frontend needs, nothing broader (`docs/PRIVACY_AND_SECURITY.md`) — this is a default to get right from the first commit, not a hardening pass to do at the end. (There is no server binding/CORS decision to make — see `docs/ARCHITECTURE.md`'s "No local network surface.")
 
 ## Phase 0.1 — Process Explorer + Socket Explorer (first product milestone)
 
@@ -25,33 +25,33 @@ Two things stay true across every phase below, not just the ones that mention th
 - [ ] Define `SocketObservation` (provider-owned, raw — no identity or lifecycle fields) and `SocketSnapshot` (immutable, point-in-time list of `SocketObservation`s) per `docs/DATA_MODEL.md`
 - [ ] Define `NetworkConnection` (Engine-owned domain state — `connection_id`, `lifecycle_state`, `first_seen`, `last_seen`) — a provider must never construct this type directly
 - [ ] Define `ObservationStatus` (state, observed_at, last_successful_at?, reason?, provider?) per `docs/DATA_MODEL.md` / `docs/OBSERVATION_CONTRACT.md`
-- [ ] Define `ProcessProvider` protocol (Python `Protocol` or ABC)
-- [ ] Implement `ProcessProvider` (`psutil`, fallback to `ps` parsing if needed)
-- [ ] Define `SocketProvider` protocol (returns a `SocketSnapshot` of `SocketObservation`s — never a `NetworkConnection`)
-- [ ] Implement `SocketProvider` (`psutil`/system APIs where available, `lsof -i -n -P` fallback)
-- [ ] Stub bare `Protocol` classes for `DNSProvider` and `TrafficProvider` — signatures only, minimal. Don't design their final shape now: the Phase 0.3 mitmproxy spike will reveal real constraints a premature interface would likely get wrong, and ADR-003's guardrail (no swappable-backend machinery before a second implementation exists) applies to interface *detail*, not just to whether an interface exists at all
+- [ ] Define `ProcessProvider` as a Rust trait
+- [ ] Implement `ProcessProvider` (`sysinfo` crate, falling back to direct `libproc` FFI if `sysinfo` doesn't cover a needed field)
+- [ ] Define `SocketProvider` trait (returns a `SocketSnapshot` of `SocketObservation`s — never a `NetworkConnection`)
+- [ ] Implement `SocketProvider` (`netstat2`/`sysinfo` where available, direct `libproc` FFI fallback)
+- [ ] Stub bare trait definitions for `DNSProvider` and `TrafficProvider` — signatures only, minimal. Don't design their final shape now: the Phase 0.3 mitmproxy spike will reveal real constraints a premature interface would likely get wrong, and ADR-003's guardrail (no swappable-backend machinery before a second implementation exists) applies to interface *detail*, not just to whether an interface exists at all
 - [ ] Implement provider-level statuses: `observed` / `unavailable` / `permission_denied` / `unsupported` / `transient_failure` per `docs/OBSERVATION_CONTRACT.md` — providers never emit `stale` or `unmatched`, those are Engine-derived
 
 **Observation Engine**
 
-- [ ] Define `ObservationEngine` responsibilities explicitly: consume `SocketSnapshot`s, diff successive snapshots into `NetworkConnection` lifecycle events, merge in `ProcessProvider` output, maintain current process/connection state, attach `ObservationStatus` to everything it emits, and emit normalized updates over the API/WebSocket layer — providers never talk to FastAPI or React directly
+- [ ] Define `ObservationEngine` responsibilities explicitly: consume `SocketSnapshot`s, diff successive snapshots into `NetworkConnection` lifecycle events, merge in `ProcessProvider` output, maintain current process/connection state, attach `ObservationStatus` to everything it emits, and emit normalized updates via Tauri commands/events — providers never talk to Tauri or React directly
 - [ ] Implement connection identity as an Engine session identity, not an OS-level one: a deterministic-where-possible, heuristic-where-not strategy for matching a `SocketObservation` on snapshot N to the same logical connection on snapshot N+1. When matching confidence is insufficient, **prefer creating a new connection over merging into an existing one** — a false split is cosmetic, a false merge corrupts the timeline (`docs/DATA_MODEL.md`)
 - [ ] Implement the `closed` vs. `expired` rule explicitly (`docs/DATA_MODEL.md`): `closed` requires positive evidence the connection ended, which the polling-only providers in this phase generally cannot produce; a connection that simply stops appearing in snapshots becomes `expired`, never silently `closed`. Expect `discovered → active → expired` to be the normal path this phase, not `→ closed`.
 - [ ] Test connection matching against reused local ports and rapidly closed/reopened connections
 - [ ] Ensure one unavailable/failing provider is isolated and doesn't take down the whole observation session (surface its status instead) — and specifically, ensure a `transient_failure` from `SocketProvider` never gets misread as "all connections disappeared" (see the 4th mandatory test in `docs/TESTING_STRATEGY.md`)
 
-**Concurrency (asyncio, not Swift concurrency)**
+**Concurrency (`tokio`, not asyncio or Swift concurrency)**
 
-- [ ] Define the asyncio model for providers and `ObservationEngine` (async tasks, a polling loop as an `asyncio` task)
-- [ ] Ensure polling tasks can be cancelled cleanly on shutdown
-- [ ] Prevent overlapping polling cycles (a slow `lsof` subprocess call must not let poll #2 start before poll #1 finishes — guard with a lock or by checking task completion)
-- [ ] Ensure WebSocket pushes to the frontend don't block the polling loop (run them as separate tasks / use a queue)
+- [ ] Define the `tokio` task model for providers and `ObservationEngine` (a polling loop as a spawned `tokio` task)
+- [ ] Ensure polling tasks can be cancelled cleanly on shutdown (`tokio` cancellation tokens or dropping the task handle)
+- [ ] Prevent overlapping polling cycles (a slow system-call/subprocess call must not let poll #2 start before poll #1 finishes — guard with a `Mutex`/atomic flag or by checking task completion)
+- [ ] Ensure event pushes to the frontend don't block the polling loop (emit via Tauri's event API from a separate task, or through a channel)
 
-**Backend API**
+**Tauri commands**
 
-- [ ] `GET /processes` — list of `ProcessInfo` with status
-- [ ] `GET /processes/{pid}/connections` — list of `NetworkConnection` with `ObservationStatus`
-- [ ] WebSocket endpoint for live connection updates, scoped to a selected process
+- [ ] `get_processes` command — list of `ProcessInfo` with status
+- [ ] `get_connections(pid)` command — list of `NetworkConnection` with `ObservationStatus`
+- [ ] Event stream (Tauri's `emit`/`listen`) for live connection updates, scoped to a selected process
 
 **Frontend**
 
@@ -83,9 +83,9 @@ Two things stay true across every phase below, not just the ones that mention th
 *Hardest phase. Don't start until 0.1–0.2 are solid and reliable.*
 
 - [ ] Spike: confirm `mitmproxy --mode local:<pid>` works standalone against a process you control, before wiring anything into the app
-- [ ] Design the backend-to-helper boundary: how the FastAPI backend launches/manages the `mitmdump`-based helper process, and the IPC format (local socket/websocket + JSON) between them
+- [ ] Design the core-to-helper boundary: how the Rust core launches/manages the `mitmdump`-based helper process (`std::process::Command`/`tokio::process`), and the IPC format (local socket + JSON via `serde`) between them
 - [ ] Write the mitmproxy addon script: consume `request`/`response` events only — no `intercept()`, no `set()`, no replay hooks, by construction
-- [ ] Implement `TrafficProvider` protocol + mitmproxy-backed implementation
+- [ ] Implement `TrafficProvider` trait + mitmproxy-backed implementation
 - [ ] Define `TrafficProvider` capability reporting (`processScoped`, `http`, `httpsMetadata`, `requestBody`, `responseBody`, ...) — distinguish "provider unavailable" from "this traffic type is unsupported"
 - [ ] Handle the `unsupported`/`unavailable` path explicitly: pinned certs, QUIC, non-HTTP traffic must degrade to "connected, bytes only" rather than erroring
 - [ ] Define `CorrelationEvidence` (pid?, protocol?, local/remote addr+port?, hostname?, timestamp, source) per `docs/DATA_MODEL.md` — the actual input to correlation, since `TrafficProvider` never has the Engine's internal `connection_id`
@@ -98,7 +98,7 @@ Two things stay true across every phase below, not just the ones that mention th
 
 ## Phase 0.4 — HTTP/HTTPS Metadata
 
-- [ ] Define `RawHTTPRequest`/`RawHTTPResponse` (transient, in-memory only — potentially-sensitive fields held raw here) and `HTTPRequest`/`HTTPResponse` (Engine-owned, redacted, the only form that reaches storage/export/API) per `docs/DATA_MODEL.md`
+- [ ] Define `RawHTTPRequest`/`RawHTTPResponse` (transient, in-memory only — potentially-sensitive fields held raw here) and `HTTPRequest`/`HTTPResponse` (Engine-owned, redacted, the only form that reaches storage/export/frontend) per `docs/DATA_MODEL.md`
 - [ ] Implement capture-time redaction for the highly-sensitive tier (`Authorization`, API keys, passwords, tokens) — these must never populate even the `Raw*` types; there is no reveal path for them, by design
 - [ ] Wire `TrafficProvider` output into the Observation Engine, attached to the correct `NetworkConnection` via the correlation logic from Phase 0.3
 - [ ] Add SNI and HTTP-`Host`-header as additional `HostnameObservation` sources (alongside reverse DNS from 0.2)
@@ -126,7 +126,7 @@ Two things stay true across every phase below, not just the ones that mention th
 - [ ] Decide and document: sessions are stored **redacted-only by default** — raw/unredacted storage, if ever offered, is an explicit opt-in, not the default
 - [ ] Define maximum body-preview size and header/session memory limits; truncate oversized captures safely instead of holding them in full
 - [ ] Implement the `RawHTTPRequest`/`RawHTTPResponse` lifetime rule from `docs/DATA_MODEL.md`: destroy raw transient objects when a session ends (not just dereference-and-hope), cap the number of retained raw objects per session, and define the eviction policy once that cap is hit
-- [ ] Ensure captured request/response contents are never written into general application logs, and reconfigure `uvicorn`'s access logging so request URLs (which can carry query-string secrets) aren't logged by the web framework itself, bypassing the `Redactor` entirely
+- [ ] Ensure captured request/response contents are never written into general application logs, and audit whatever logging crate (`log`/`tracing`) and Tauri's own logging plugin are configured with so request URLs (which can carry query-string secrets) aren't logged independently of application code, bypassing the `Redactor` entirely
 - [ ] Document where session files are stored on disk
 - [ ] Implement "start session" / "stop & save session"
 - [ ] Implement session list + reopen-for-viewing (explicitly not "resend" — no code path should be able to turn a saved request back into an outbound one)
@@ -139,32 +139,33 @@ Two things stay true across every phase below, not just the ones that mention th
 - [ ] Add filter bar to the API traffic view and connections view
 - [ ] Add basic analytics: totals, error counts, latency distribution (per process and per session)
 
-## Phase 1.0 — Local-Run Polish
+## Phase 1.0 — Local-Run Polish + Packaged Distribution
 
-*Distribution as a packaged native app is explicitly out of scope for 1.0 — see the deferred phase below.*
+*Under the FastAPI-era stack, packaged distribution was explicitly deferred past 1.0 (see the old Phase 2 below) because it wasn't achievable without a separate rewrite. Under Tauri (`DECISIONS.md` ADR-013), a signed native build is close to free — `tauri build` plus signing config, not a separate project — so it belongs in 1.0's actual definition of done, not a "someday" phase.*
 
 - [ ] Build the actual "Observation Capabilities" panel UI (data has existed since Phase 0.2, capability reporting since 0.3)
 - [ ] Dark mode pass
 - [ ] Export (session as JSON, or a single flow as text) — export only, never re-send; export must go through the same redacted-by-default path as session storage
 - [ ] Performance pass: polling overhead, large-session memory use, confirm resource limits from 0.6 actually hold under sustained high-traffic load
-- [ ] Write a reliable local install/run guide: backend setup (`pip install`/`uvicorn`), frontend setup (`npm install`/dev server or a built static bundle the backend serves), and how to run both together
+- [ ] Code signing and notarization: Apple Developer certificate, `tauri.conf.json` signing identity, `notarytool` submission — set this up early enough in the phase to catch certificate/entitlement issues before they're a release blocker
+- [ ] Write a reliable build/run guide: `cargo tauri build` for the distributable signed `.app`, plus a `cargo tauri dev` note for running from source during development
 - [ ] Write end-user README: what this tool does, what it deliberately does not do, and the "things you own or have permission to inspect" scope note from the original learning path
 - [ ] Run a full end-to-end regression pass before calling this 1.0: process discovery → socket observation → lifecycle tracking → DNS correlation → HTTP observation → redaction → session storage → session reopening. A checklist walkthrough is enough at this project's scale — this doesn't need CI infrastructure, just a deliberate pass through the whole chain instead of assuming the individual phase demo checkpoints still compose correctly together
 
-## Phase 2 — Packaged Distribution (future, optional — not required to consider this project done)
+## Phase 2 — Network Extension Upgrade (future, optional — not required to consider this project done)
 
-Only pursue this if "I want other people to install this like a normal app" becomes an actual goal. Not part of 1.0's definition of done.
+Only pursue this if mitmproxy's local-mode ceiling (certificate pinning, no packet-level capture) becomes an actual blocker for something you need to see. Not part of 1.0's definition of done — 1.0 ships with the mitmproxy-based `TrafficProvider` as its traffic-capture mechanism, packaged and signed.
 
-- [ ] Decide on a packaging approach (e.g. wrapping the backend + a built frontend bundle in `pywebview` or similar) for a double-clickable local app
-- [ ] If pursuing a Network Extension–based `TrafficProvider` upgrade: this requires introducing a separate, separately-signed native helper (see `docs/DECISIONS.md` ADR-009) — file the entitlement request early and treat Apple's review lead time as its own milestone
-- [ ] Code signing, notarization, or App Store submission prep, if a distributed native wrapper is built
+- [ ] Design and build a Swift/ObjC system-extension target implementing `NEPacketTunnelProvider`/`NEFilterDataProvider`, embedded inside this app's existing signed `.app` bundle (see `docs/DECISIONS.md` ADR-013 and `docs/PERMISSIONS_AND_PLATFORM.md` — this is still real, separate native work even though the host app is already native)
+- [ ] File the Network Extension entitlement request early and treat Apple's review lead time as its own milestone
+- [ ] Design the XPC or equivalent IPC boundary between the main Rust core and the Swift extension, following the same `TrafficProvider` interface contract so the rest of the Engine doesn't need to change
 
 ---
 
 ## Cross-cutting (ongoing, not a single phase)
 
-- [ ] Build a small deterministic `NetworkTestTarget` Python script early (useful starting in Phase 0.1, essential by 0.3) that generates known traffic on demand: a plain TCP connection, a short-lived connection, a long-lived connection, several simultaneous connections, a couple of HTTP(S) requests once Phase 0.3 exists, and requests carrying intentionally fake sensitive-looking fields for redaction testing. Same principle the source learning path opened with — verify the tool against traffic you already understand before pointing it at anything else.
-- [ ] Unit tests per provider (`pytest`, mock the system-call boundary so tests don't depend on real running processes)
+- [ ] Build a small deterministic `NetworkTestTarget` script early (useful starting in Phase 0.1, essential by 0.3) that generates known traffic on demand: a plain TCP connection, a short-lived connection, a long-lived connection, several simultaneous connections, a couple of HTTP(S) requests once Phase 0.3 exists, and requests carrying intentionally fake sensitive-looking fields for redaction testing. This is a standalone traffic-generating script, not part of the app itself — Python is a fine, simple choice for it regardless of the app's own stack. Same principle the source learning path opened with — verify the tool against traffic you already understand before pointing it at anything else.
+- [ ] Unit tests per provider (`cargo test`, mock the system-call boundary so tests don't depend on real running processes)
 - [ ] Add integration tests for the observation pipeline using `NetworkTestTarget`: generate known connections/HTTP requests and verify they come out the other end with correct process attribution, connection identity, lifecycle events, hostname correlation, HTTP correlation, and redaction — unit tests per provider don't catch a correlation bug in `ObservationEngine`, only a test that exercises the full chain does. This includes the four mandatory tests in `docs/TESTING_STRATEGY.md`: process termination, polling-gap → `expired`, correlation ambiguity → `unmatched`, and provider failure must not manufacture expiry.
 - [ ] Keep `docs/PERMISSIONS_AND_PLATFORM.md`'s VERIFIED/ASSUMED/DECISION tags current as permission reality gets discovered
 - [ ] Re-check the "explicitly out of scope" list (`docs/process-network-inspector-report.md` Section 2) at the start of every phase — no feature in this roadmap should ever grow into edit/replay/inject

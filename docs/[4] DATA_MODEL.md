@@ -28,17 +28,21 @@ CorrelationEvidence ──> (Engine correlation) ──> NetworkConnection.conne
 
 **Providers report observations. The Engine creates domain state.** Every type below is either a *provider-owned observation* (immutable, no lifecycle/identity fields, exactly what was seen in one call) or *Engine-owned domain state* (carries `connection_id`, lifecycle, timestamps — never constructed by a provider). If a provider ever needs to populate an Engine-owned field, that's a sign the type boundary is wrong, not a sign the field should become optional.
 
+## Notation
+
+Types below are given in Rust (per `DECISIONS.md` ADR-013 — this document's types were always designed to be language-agnostic, and only the notation changed, not the shape): `Option<T>` for an optional field, `Vec<T>` for a list, enums for the fixed-value fields that were previously written as `Literal[...]`, `DateTime<Utc>` (`chrono`) for timestamps, and `HashMap<String, String>` for header-shaped maps. Ports use `u16` (their actual range); PIDs and byte counts use unsigned integer types since neither is ever negative.
+
 ## `ProcessObservation` (provider-owned)
 
 Exactly what `ProcessProvider` saw in one call — no status judgment, same discipline as `SocketObservation` below. An earlier version of this document declared the whole `ProcessInfo` type "provider-owned" while also saying its `status` field was Engine-set — the identical contradiction already fixed for sockets, just missed here. This split closes it.
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| pid | int | yes | |
-| name | str | yes | |
-| executable_path | str | yes | |
-| cpu_percent | float | no | best-effort |
-| memory_bytes | int | no | best-effort |
+| pid | u32 | yes | |
+| name | String | yes | |
+| executable_path | String | yes | |
+| cpu_percent | f32 | no | best-effort |
+| memory_bytes | u64 | no | best-effort |
 
 ## `ProcessInfo` (Engine-owned)
 
@@ -46,12 +50,12 @@ Built from a `ProcessObservation` plus Engine-derived judgment. A provider never
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| pid | int | yes | copied from the observation |
-| name | str | yes | |
-| executable_path | str | yes | |
-| cpu_percent | float | no | |
-| memory_bytes | int | no | |
-| status | str | yes | `running` / `exited` — Engine-derived |
+| pid | u32 | yes | copied from the observation |
+| name | String | yes | |
+| executable_path | String | yes | |
+| cpu_percent | f32 | no | |
+| memory_bytes | u64 | no | |
+| status | enum { Running, Exited } | yes | Engine-derived |
 
 ## `SocketSnapshot` (provider-owned)
 
@@ -59,8 +63,8 @@ Immutable, point-in-time output of `SocketProvider`. Never mutated after creatio
 
 | Field | Type | Notes |
 |---|---|---|
-| timestamp | datetime | when this snapshot was taken |
-| observations | list[SocketObservation] | raw facts, no identity or lifecycle yet |
+| timestamp | DateTime\<Utc\> | when this snapshot was taken |
+| observations | Vec\<SocketObservation\> | raw facts, no identity or lifecycle yet |
 
 ## `SocketObservation` (provider-owned — NOT `NetworkConnection`)
 
@@ -68,15 +72,15 @@ Exactly what `SocketProvider` saw for one socket in one snapshot. No `connection
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| pid | int | yes | |
-| protocol | Literal["tcp","udp"] | yes | |
-| local_addr | str | yes | |
-| local_port | int | yes | |
-| remote_addr | str | no | absent for LISTEN sockets |
-| remote_port | int | no | absent for LISTEN sockets |
-| state | str | yes | LISTEN / ESTABLISHED / etc., as reported this instant |
-| bytes_sent | int | no | provider-dependent — see `OBSERVATION_CONTRACT.md` |
-| bytes_received | int | no | provider-dependent |
+| pid | u32 | yes | |
+| protocol | enum { Tcp, Udp } | yes | |
+| local_addr | String | yes | |
+| local_port | u16 | yes | |
+| remote_addr | Option\<String\> | no | absent for LISTEN sockets |
+| remote_port | Option\<u16\> | no | absent for LISTEN sockets |
+| state | String | yes | LISTEN / ESTABLISHED / etc., as reported this instant |
+| bytes_sent | Option\<u64\> | no | provider-dependent — see `OBSERVATION_CONTRACT.md` |
+| bytes_received | Option\<u64\> | no | provider-dependent |
 
 ## `NetworkConnection` (Engine-owned domain state)
 
@@ -84,19 +88,19 @@ Constructed and owned exclusively by the Observation Engine, by matching `Socket
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| connection_id | str | yes | an **Engine session identity, not an OS-level socket identity** — assigned by the Engine the first time an observation is matched, stable across polls only as long as the Engine's matching heuristic holds. Addr/port tuples are not a reliable identity on their own (port reuse, rapid close/reopen, IPv4/IPv6 representation differences), so matching is necessarily heuristic when a provider exposes insufficient identity information. **Rule: prefer creating a new connection over incorrectly merging two distinct ones.** A false split just looks redundant in the UI; a false merge silently corrupts the timeline by attributing one connection's events to another's history — those are not equally bad failure modes. See the identity-matching rule in `TODO.md` Phase 0.1. |
-| pid | int | yes | copied from the matched `SocketObservation` |
+| connection_id | String | yes | an **Engine session identity, not an OS-level socket identity** — assigned by the Engine the first time an observation is matched, stable across polls only as long as the Engine's matching heuristic holds. Addr/port tuples are not a reliable identity on their own (port reuse, rapid close/reopen, IPv4/IPv6 representation differences), so matching is necessarily heuristic when a provider exposes insufficient identity information. **Rule: prefer creating a new connection over incorrectly merging two distinct ones.** A false split just looks redundant in the UI; a false merge silently corrupts the timeline by attributing one connection's events to another's history — those are not equally bad failure modes. See the identity-matching rule in `TODO.md` Phase 0.1. |
+| pid | u32 | yes | copied from the matched `SocketObservation` |
 | protocol, local_addr, local_port, remote_addr, remote_port, state | — | yes/no as above | copied from the latest matched `SocketObservation` |
-| lifecycle_state | Literal["discovered","active","closed","expired"] | yes | Engine-derived — see the rule below. Never set by a provider. |
-| first_seen | datetime | yes | Engine-derived, from the first snapshot this connection appeared in |
-| last_seen | datetime | yes | Engine-derived, from the most recent snapshot it appeared in |
+| lifecycle_state | enum { Discovered, Active, Closed, Expired } | yes | Engine-derived — see the rule below. Never set by a provider. |
+| first_seen | DateTime\<Utc\> | yes | Engine-derived, from the first snapshot this connection appeared in |
+| last_seen | DateTime\<Utc\> | yes | Engine-derived, from the most recent snapshot it appeared in |
 | status | ObservationStatus | yes | see below |
 
 ### The `closed` vs `expired` rule — must be enforced in the diffing logic, not left implicit
 
-A connection missing from the current snapshot is **not** automatically `closed`. Between two polls, a missing connection could mean it actually closed, or that `lsof`/`SocketProvider` had a transient failure, or that the process disappeared, or that the poll was simply delayed. The Engine cannot always distinguish these, and must not guess:
+A connection missing from the current snapshot is **not** automatically `closed`. Between two polls, a missing connection could mean it actually closed, or that `SocketProvider` had a transient failure, or that the process disappeared, or that the poll was simply delayed. The Engine cannot always distinguish these, and must not guess:
 
-- **`closed`** — there is positive evidence the connection terminated. A socket simply missing from a subsequent `lsof`/`psutil` snapshot is **not**, by itself, positive evidence of closure — polling has no distinct "closed" signal separate from "absent," so this case is indistinguishable from `expired` with the tools Phase 0.1–0.2 actually have. `closed` becomes reachable once (if ever) a provider adds a genuine close-event source (an OS-level notification, for instance) — until then, expect it to be rare-to-unreachable in practice.
+- **`closed`** — there is positive evidence the connection terminated. A socket simply missing from a subsequent system-API/`SocketProvider` snapshot is **not**, by itself, positive evidence of closure — polling has no distinct "closed" signal separate from "absent," so this case is indistinguishable from `expired` with the tools Phase 0.1–0.2 actually have. `closed` becomes reachable once (if ever) a provider adds a genuine close-event source (an OS-level notification, for instance) — until then, expect it to be rare-to-unreachable in practice.
 - **`expired`** — the connection was previously observed, is no longer observable, and the Engine cannot prove it actually closed. This is the default, and — practically, for the polling-only providers in Phase 0.1–0.2 — the outcome you should expect essentially every connection to reach. `discovered → active → expired` is the normal lifecycle for this phase; `discovered → active → closed` is not something the current providers can honestly produce.
 
 Treat `expired` as the common case and `closed` as the case requiring actual evidence — not the other way around.
@@ -107,15 +111,15 @@ What `TrafficProvider` actually has available when it captures a flow — this i
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| pid | int | no | available if the capture is process-scoped |
-| protocol | str | no | |
-| local_addr | str | no | |
-| local_port | int | no | |
-| remote_addr | str | no | |
-| remote_port | int | no | |
-| hostname | str | no | e.g. from SNI or the `Host` header |
-| timestamp | datetime | yes | |
-| source | str | yes | which provider/mechanism produced this evidence |
+| pid | Option\<u32\> | no | available if the capture is process-scoped |
+| protocol | Option\<String\> | no | |
+| local_addr | Option\<String\> | no | |
+| local_port | Option\<u16\> | no | |
+| remote_addr | Option\<String\> | no | |
+| remote_port | Option\<u16\> | no | |
+| hostname | Option\<String\> | no | e.g. from SNI or the `Host` header |
+| timestamp | DateTime\<Utc\> | yes | |
+| source | String | yes | which provider/mechanism produced this evidence |
 
 The Engine matches `CorrelationEvidence` against known `NetworkConnection`s. A confident match assigns the evidence's flow to that `connection_id`. An insufficiently confident match produces `unmatched` (see `OBSERVATION_CONTRACT.md`) — the flow is never attached to a guessed connection, and a `connection_id` is never fabricated to force a match.
 
@@ -123,29 +127,29 @@ The Engine matches `CorrelationEvidence` against known `NetworkConnection`s. A c
 
 What `TrafficProvider` actually captured, before any redaction, and the source a "show anyway" UI action reveals from. **Highly-sensitive fields (`Authorization`, API keys, passwords, tokens, credentials — see `PRIVACY_AND_SECURITY.md`'s classification) are stripped even here, at capture time, and never exist in raw form anywhere, including memory.** Only the "potentially sensitive" tier (URLs, query params, bodies, cookies, non-auth headers) is held raw transiently.
 
-**Lifetime rule, not left implicit:** these objects exist only as long as the live monitoring session that captured them, not indefinitely just because the process/session object itself stays alive. When a session stops, its `Raw*` objects are destroyed, not merely dereferenced-and-hoped-for-GC. A long-running session must not be allowed to accumulate raw sensitive data without bound — enforce, at minimum: a maximum body-preview size per object, a cap on the number of retained raw requests/responses, and a session-level memory budget with an eviction policy once it's hit. None of this needs full implementation in Phase 0.1, but the rule is established here so a later phase doesn't have to retrofit it onto data that's already been designed to linger.
+**Lifetime rule, not left implicit:** these objects exist only as long as the live monitoring session that captured them, not indefinitely just because the process/session object itself stays alive. When a session stops, its `Raw*` objects are destroyed, not merely dropped-and-hoped-for-cleanup. A long-running session must not be allowed to accumulate raw sensitive data without bound — enforce, at minimum: a maximum body-preview size per object, a cap on the number of retained raw requests/responses, and a session-level memory budget with an eviction policy once it's hit. None of this needs full implementation in Phase 0.1, but the rule is established here so a later phase doesn't have to retrofit it onto data that's already been designed to linger.
 
-## `HTTPRequest` / `HTTPResponse` (Engine-owned, redacted — the only form that reaches storage, export, or the API)
+## `HTTPRequest` / `HTTPResponse` (Engine-owned, redacted — the only form that reaches storage, export, or the frontend)
 
 | Field (`HTTPRequest`) | Type | Required |
 |---|---|---|
-| connection_id | str | yes |
-| method | str | yes |
-| host | str | yes |
-| path | str | yes |
-| headers | dict[str, str] | yes — redacted per `PRIVACY_AND_SECURITY.md`'s two-tier model |
-| body_preview | Optional[str] | no — truncated per the size limit in `PRIVACY_AND_SECURITY.md` |
-| timestamp | datetime | yes |
+| connection_id | String | yes |
+| method | String | yes |
+| host | String | yes |
+| path | String | yes |
+| headers | HashMap\<String, String\> | yes — redacted per `PRIVACY_AND_SECURITY.md`'s two-tier model |
+| body_preview | Option\<String\> | no — truncated per the size limit in `PRIVACY_AND_SECURITY.md` |
+| timestamp | DateTime\<Utc\> | yes |
 
 | Field (`HTTPResponse`) | Type | Required |
 |---|---|---|
-| request_id | str | yes |
-| status | int | yes |
-| headers | dict[str, str] | yes — redacted |
-| body_preview | Optional[str] | no |
-| duration_ms | float | yes |
+| request_id | String | yes |
+| status | u16 | yes |
+| headers | HashMap\<String, String\> | yes — redacted |
+| body_preview | Option\<String\> | no |
+| duration_ms | f64 | yes |
 
-This is the only representation that FastAPI ever serializes to the frontend by default, and the only one the Session Store ever writes. A "show anyway" action operates on the paired `RawHTTPRequest`/`RawHTTPResponse` still held in memory for the current session — it never changes what gets persisted.
+This is the only representation the Rust core ever sends to the frontend by default (over an `invoke` response or event payload), and the only one the Session Store ever writes. A "show anyway" action operates on the paired `RawHTTPRequest`/`RawHTTPResponse` still held in memory for the current session — it never changes what gets persisted.
 
 ## `HostnameObservation` (provider-owned)
 
@@ -153,23 +157,23 @@ Kept as separate rows per source rather than one flattened `resolved_host` strin
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| connection_id | str | yes | |
-| source | Literal["reverse_dns","sni","http_host"] | yes | |
-| hostname | str | yes | |
-| confidence | float (0–1) | yes | e.g. reverse DNS on a shared/CDN IP gets lower confidence than an HTTP `Host` header |
+| connection_id | String | yes | |
+| source | enum { ReverseDns, Sni, HttpHost } | yes | |
+| hostname | String | yes | |
+| confidence | f32 (0.0–1.0) | yes | e.g. reverse DNS on a shared/CDN IP gets lower confidence than an HTTP `Host` header |
 
 ## `TrafficEvent` (Engine-owned)
 
-An earlier version used a single opaque `payload_ref: str` field whose meaning (connection ID? request ID? response ID?) depended on reading `type` first — a real ambiguity, not just a style issue, especially once the timeline needs to query these. Replaced with explicit, individually-optional reference fields:
+An earlier version used a single opaque `payload_ref: String` field whose meaning (connection ID? request ID? response ID?) depended on reading `type` first — a real ambiguity, not just a style issue, especially once the timeline needs to query these. Replaced with explicit, individually-optional reference fields:
 
 | Field | Type | Notes |
 |---|---|---|
-| event_id | str | yes |
-| timestamp | datetime | yes |
-| type | Literal["connection_opened","connection_closed","request","response"] | yes |
-| connection_id | Optional[str] | populated for every event type |
-| request_id | Optional[str] | populated for `request`/`response` events |
-| response_id | Optional[str] | populated for `response` events only |
+| event_id | String | yes |
+| timestamp | DateTime\<Utc\> | yes |
+| type | enum { ConnectionOpened, ConnectionClosed, Request, Response } | yes |
+| connection_id | Option\<String\> | populated for every event type |
+| request_id | Option\<String\> | populated for `request`/`response` events |
+| response_id | Option\<String\> | populated for `response` events only |
 
 ## `ObservationStatus` (Engine-owned — see `OBSERVATION_CONTRACT.md` for the full status vocabulary)
 
@@ -178,10 +182,10 @@ Attached to every domain object the Engine emits, rather than status being a loo
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | state | ObservationState (enum, see `OBSERVATION_CONTRACT.md`) | yes | |
-| observed_at | datetime | yes | when this status was determined |
-| last_successful_at | Optional[datetime] | no | set when `state == stale` |
-| reason | Optional[str] | no | human-readable detail for denied/unsupported/failure states |
-| provider | Optional[str] | no | which provider/layer this status originates from, when relevant |
+| observed_at | DateTime\<Utc\> | yes | when this status was determined |
+| last_successful_at | Option\<DateTime\<Utc\>\> | no | set when `state == stale` |
+| reason | Option\<String\> | no | human-readable detail for denied/unsupported/failure states |
+| provider | Option\<String\> | no | which provider/layer this status originates from, when relevant |
 
 ## `Flow` (type defined now, wired in from v0.3 — see `DECISIONS.md`)
 
@@ -191,11 +195,11 @@ A protocol-agnostic wrapper around a connection plus its attached observations, 
 
 | Field | Type | Notes |
 |---|---|---|
-| flow_id | str | |
-| connection_id | str | |
-| hostname_observations | list[HostnameObservation] | |
-| requests | list[HTTPRequest] | |
-| responses | list[HTTPResponse] | |
+| flow_id | String | |
+| connection_id | String | |
+| hostname_observations | Vec\<HostnameObservation\> | |
+| requests | Vec\<HTTPRequest\> | |
+| responses | Vec\<HTTPResponse\> | |
 
 ## `ObservationCapabilities` — a distinct concept from `ObservationStatus`, documented now, implemented later
 

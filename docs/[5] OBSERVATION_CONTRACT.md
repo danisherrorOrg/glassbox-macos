@@ -60,9 +60,9 @@ HTTPS payload:
     unmatched           → traffic was captured but not attached to a connection (Engine, from CorrelationEvidence)
 ```
 
-## How this surfaces in the API/WebSocket contract
+## How this surfaces in the Tauri command/event contract
 
-Every payload the backend sends carries an `ObservationStatus` (see `DATA_MODEL.md`) alongside its data, never instead of it:
+Every payload the Rust core sends — whether as an `invoke` command's response or a pushed event — carries an `ObservationStatus` (see `DATA_MODEL.md`) alongside its data, never instead of it:
 
 ```json
 {
@@ -80,4 +80,4 @@ A `null`/missing `data` field is only ever paired with `unavailable`, `permissio
 
 ## The one rule this document exists to enforce
 
-React never infers a status from the shape of the data (e.g. "the array is empty, so I'll show 'No connections'"). It renders whatever `status.state` the backend sent, explicitly. If a view ever needs to guess what an empty response means, that's a sign a backend endpoint is missing a status field, not a reason to add inference logic in the frontend. And if a provider's own code ever needs to set `stale` or `unmatched` on its own output, that's a sign correlation or freshness logic has leaked into the provider layer — move it back into the Engine.
+React never infers a status from the shape of the data (e.g. "the array is empty, so I'll show 'No connections'"). It renders whatever `status.state` the core sent, explicitly. If a view ever needs to guess what an empty response means, that's a sign a Tauri command is missing a status field, not a reason to add inference logic in the frontend. And if a provider's own code ever needs to set `stale` or `unmatched` on its own output, that's a sign correlation or freshness logic has leaked into the provider layer — move it back into the Engine.

@@ -7,7 +7,7 @@ Three passes, each with a different job. Reading the same nine files in the same
 ## Pass 1 — the shape of the thing (skim, don't memorize)
 
 1. **`process-network-inspector-report.md`** — what this is and why: the product principle, the four-level visibility model, the core workflow. This is the lens everything else gets read through.
-2. **`DECISIONS.md`** — skim only this time, don't dwell on the technical detail of each ADR yet. The point of reading it this early is the *story*: why Swift got dropped for FastAPI/React, and that the architecture went through two rounds of real contradictions getting caught and fixed. That context makes Pass 2 land better — you'll recognize *why* a type is shaped the way it is instead of just memorizing that it is.
+2. **`DECISIONS.md`** — skim only this time, don't dwell on the technical detail of each ADR yet. The point of reading it this early is the *story*: why Swift got dropped for FastAPI/React (ADR-009), why that got revised again to Tauri/Rust before any code was written (ADR-013), and that the architecture went through two rounds of real contradictions getting caught and fixed (ADR-011, ADR-012). That context makes Pass 2 land better — you'll recognize *why* a type is shaped the way it is instead of just memorizing that it is.
 3. **`ARCHITECTURE.md`** — the system's shape: the four layers, who's allowed to depend on whom, where state lives, where redaction happens. Read for the shape, not every rule yet.
 
 ## Pass 2 — the technical core (this is the one to slow down on)

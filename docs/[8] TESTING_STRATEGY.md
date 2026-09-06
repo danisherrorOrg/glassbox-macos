@@ -3,13 +3,13 @@
 ## The pyramid
 
 ```
-Unit tests (pytest)
+Unit tests (cargo test)
       ↓
 Provider tests (mocked system-call boundary)
       ↓
 Observation Engine tests (correlation logic, no real OS calls)
       ↓
-Integration tests (NetworkTestTarget → full backend pipeline)
+Integration tests (NetworkTestTarget → full core pipeline)
       ↓
 Frontend component tests (React Testing Library)
       ↓
@@ -18,11 +18,11 @@ End-to-end pass (before calling any version 1.0)
 
 ## Unit tests
 
-Standard `pytest`, one module per provider and per Engine responsibility (lifecycle diffing, correlation matching, redaction). Mock the system-call boundary — `subprocess.run(["lsof", ...])`, `psutil` calls, the mitmproxy helper's IPC — so tests don't depend on real running processes or real network traffic, and run identically in CI or offline.
+Standard `cargo test`, one module per provider and per Engine responsibility (lifecycle diffing, correlation matching, redaction). Mock the system-call boundary — the `sysinfo`/`netstat2`/`libproc` calls, the mitmproxy helper's IPC — behind the same provider traits `ARCHITECTURE.md` defines, so tests don't depend on real running processes or real network traffic, and run identically in CI or offline. A mock provider implementation (returning fixture `SocketObservation`/`ProcessObservation` values) is the Rust-native equivalent of mocking `subprocess`/`psutil` calls directly.
 
 ## Provider tests
 
-Each provider is tested against fixture data resembling real `lsof`/`psutil`/mitmproxy output, asserting it parses into the correct Pydantic models and returns the correct `OBSERVATION_CONTRACT.md` status for edge cases: empty output, malformed output, a permission-denied error message, a timeout.
+Each provider is tested against fixture data resembling real `sysinfo`/`libproc`/mitmproxy output, asserting it parses into the correct `serde`-derived types and returns the correct `OBSERVATION_CONTRACT.md` status for edge cases: empty output, malformed output, a permission-denied error message, a timeout.
 
 ## Observation Engine tests
 
@@ -49,7 +49,7 @@ Every integration test in this project should be written against `NetworkTestTar
 
 ## Integration tests
 
-Exercise the full chain end to end within the backend, without a browser:
+Exercise the full chain end to end within the Rust core, without a webview:
 
 ```
 NetworkTestTarget → SocketProvider → Observation Engine → expected NetworkConnection
@@ -67,7 +67,7 @@ This is the layer that unit tests per provider cannot substitute for — a provi
 
 ## Frontend tests
 
-React Testing Library for component-level behavior: a connection row renders the right status badge for each `OBSERVATION_CONTRACT.md` status, a redacted field never renders its raw value even if the mock API response includes one by mistake, filter inputs produce the expected query params.
+React Testing Library for component-level behavior: a connection row renders the right status badge for each `OBSERVATION_CONTRACT.md` status, a redacted field never renders its raw value even if the mock `invoke` response includes one by mistake, filter inputs produce the expected query params.
 
 ## End-to-end regression pass (before any 1.0 tag)
 
