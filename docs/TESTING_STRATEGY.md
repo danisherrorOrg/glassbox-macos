@@ -58,6 +58,12 @@ NetworkTestTarget (HTTP) → TrafficProvider → Engine correlation → expected
 
 This is the layer that unit tests per provider cannot substitute for — a provider can be individually correct while the Engine still mis-correlates its output.
 
+**Three of these are mandatory, not optional, because they directly protect the architecture's least obvious assumptions:**
+
+1. **Process termination.** Start `NetworkTestTarget`, confirm its connections are observed, terminate it, and assert the Engine marks it `exited` rather than continuing to show its last-known connections as live.
+2. **Polling gap → `expired`, not `closed`.** Simulate a connection disappearing between two snapshots with no positive evidence of closure, and assert the Engine produces `lifecycle_state = expired` — never `closed` — per the rule in `DATA_MODEL.md`. This is the test that would catch a naive `if not in snapshot: closed` implementation.
+3. **Correlation ambiguity.** Feed the Engine `CorrelationEvidence` that doesn't confidently match any known `NetworkConnection` (or matches more than one equally well), and assert the result is `unmatched` — never a guessed `connection_id`, and never a silently dropped flow.
+
 ## Frontend tests
 
 React Testing Library for component-level behavior: a connection row renders the right status badge for each `OBSERVATION_CONTRACT.md` status, a redacted field never renders its raw value even if the mock API response includes one by mistake, filter inputs produce the expected query params.

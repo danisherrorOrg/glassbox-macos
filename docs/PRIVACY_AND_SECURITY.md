@@ -7,10 +7,10 @@ This project's entire premise is observing other processes' potentially sensitiv
 | Class | Examples | Handling |
 |---|---|---|
 | Public-ish | process name, PID, remote IP | shown freely |
-| Potentially sensitive | URLs, query parameters, request/response bodies, cookies, non-auth headers | redacted by default, revealable via "show anyway" for the current session only |
-| Highly sensitive | `Authorization`, API keys, passwords, tokens, credentials in any field name | always redacted, including in "show anyway" mode — never revealed in the UI at all |
+| Potentially sensitive | URLs, query parameters, request/response bodies, cookies, non-auth headers | held raw, transiently, in memory only (`RawHTTPRequest`/`RawHTTPResponse` in `DATA_MODEL.md`); redacted by default in the persisted/redacted view, revealable via "show anyway" for the current session only |
+| Highly sensitive | `Authorization`, API keys, passwords, tokens, credentials in any field name | redacted irreversibly **at capture time** — never exists in raw form anywhere, including in memory. There is no reveal path, because there is nothing left to reveal. |
 
-The highly-sensitive tier is intentionally stricter than "redact by default" — a header or body field matching the sensitive-field heuristics (see `DATA_MODEL.md`/`Redactor`) should not have a reveal path in the UI, precisely because heuristic matching isn't perfectly reliable and the failure mode of over-redacting is far cheaper than the failure mode of exposing a credential.
+**This resolves an earlier inconsistency between this document and `DATA_MODEL.md`/`ARCHITECTURE.md`:** an earlier draft said headers were "redacted before the object exists" while also describing a "show anyway" path that implied a raw value survived somewhere to be revealed. Those can't both be true for the same field. The fix is the two-tier split above — only the *potentially sensitive* tier gets the raw-transient/redacted-persistent treatment; the *highly sensitive* tier skips the raw-in-memory step entirely and is redacted the moment it's captured, with no reveal path at all. The failure mode of over-redacting a credential is far cheaper than the failure mode of exposing one, so the tier where heuristic matching could plausibly be wrong is exactly the tier that gets the irreversible treatment.
 
 ## The pipeline rule
 
@@ -26,10 +26,10 @@ Capture → Store raw → Redact only in the UI
 
 This is not a style preference — it's the difference between a session file on disk containing your actual API tokens versus not. `PRIVACY_AND_SECURITY.md` is the authority if any future code path is tempted to store raw data "just for now, we'll redact on read": don't.
 
-## The two redaction checkpoints (see `ARCHITECTURE.md`)
+## The two redaction checkpoints (see `ARCHITECTURE.md` and `DATA_MODEL.md`)
 
-1. **Display-time redaction** — reversible within a running session via an explicit "show anyway" action, for the *potentially sensitive* tier only.
-2. **Persistence/export redaction** — mandatory, irreversible, applied to everything written to the Session Store or any export file, regardless of what's currently toggled on screen. A "show anyway" preference must never propagate to disk.
+1. **Capture-time redaction (highly sensitive only)** — irreversible, applied before a `RawHTTPRequest`/`RawHTTPResponse` object even exists for these fields. Nothing downstream — display, storage, export, "show anyway" — can ever see these values, because they were never captured in retrievable form.
+2. **Persistence/export redaction (potentially sensitive tier)** — mandatory, irreversible, applied to everything written to the Session Store or any export file, regardless of what's currently toggled on screen in the live UI. A "show anyway" preference reveals the in-memory `Raw*` object for display only and must never propagate to disk.
 
 ## FastAPI/React-specific rules (new since the stack pivot — a native app didn't need these)
 
