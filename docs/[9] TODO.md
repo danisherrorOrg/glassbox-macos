@@ -123,7 +123,7 @@ Two things stay true across every phase below, not just the ones that mention th
 
 - [ ] Finalize the timeline view to interleave connection events and HTTP request/response events chronologically
 - [ ] Design session storage format (local file, e.g. JSON/SQLite) capturing a full observation window
-- [ ] Decide and document: sessions are stored **redacted-only by default** — raw/unredacted storage, if ever offered, is an explicit opt-in, not the default
+- [ ] Implement and document: sessions are stored **redacted-only, unconditionally** — no raw/unredacted storage mode, opt-in or otherwise (`docs/PRIVACY_AND_SECURITY.md`)
 - [ ] Define maximum body-preview size and header/session memory limits; truncate oversized captures safely instead of holding them in full
 - [ ] Implement the `RawHTTPRequest`/`RawHTTPResponse` lifetime rule from `docs/DATA_MODEL.md`: destroy raw transient objects when a session ends (not just dereference-and-hope), cap the number of retained raw objects per session, and define the eviction policy once that cap is hit
 - [ ] Ensure captured request/response contents are never written into general application logs, and audit whatever logging crate (`log`/`tracing`) and Tauri's own logging plugin are configured with so request URLs (which can carry query-string secrets) aren't logged independently of application code, bypassing the `Redactor` entirely
