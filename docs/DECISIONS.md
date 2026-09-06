@@ -91,3 +91,19 @@ Lightweight ADR log, one entry per decision that took real deliberation to reach
 - Resolved a genuine contradiction between `ARCHITECTURE.md` (raw values survive in memory for "show anyway") and `DATA_MODEL.md` (headers redacted "before this object exists"): potentially-sensitive fields get the raw-transient/redacted-persistent split (`RawHTTPRequest` vs `HTTPRequest`); highly-sensitive fields are redacted irreversibly at capture time with no raw form ever existing, and therefore no reveal path.
 - Softened "the Network Extension upgrade path is effectively foreclosed" to the accurate version: not achievable as a pure Python component, but not permanently impossible — it requires a separate native helper, which the TODO already anticipated elsewhere. The stronger wording was inconsistent with that already-documented escape hatch.
 **Why this matters:** every fix above makes an already-agreed principle ("providers report observations, the Engine creates domain state," "never claim more certainty than the system actually has") true at the type level instead of just true in prose. None of it is new architectural surface area.
+
+---
+
+### ADR-012: Second consistency pass — finish the provider/Engine split, tighten lifecycle honesty, bound raw-data lifetime
+**Status:** Accepted. This is the last review-driven pass before Phase 0.1 — further changes should come from implementation experience, not another reading of these documents.
+**Decision:**
+- Applied the `SocketObservation`/`NetworkConnection` split (ADR-011) to processes too: `ProcessObservation` (provider) vs. `ProcessInfo` (Engine, adds `status`). The exact same contradiction ADR-011 fixed for sockets had been missed on the process side.
+- Tightened the `closed` definition: a socket missing from a snapshot is not positive evidence of closure, since polling has no distinct close signal separate from absence. `closed` is expected to be rare-to-unreachable for the polling-only providers through Phase 0.2; `expired` is the normal outcome.
+- Added an explicit identity-matching principle: `connection_id` is an Engine session identity, not an OS-level one, and the Engine prefers a false split over a false merge when matching confidence is insufficient — a false merge corrupts the timeline, a false split is merely redundant.
+- Replaced `TrafficEvent.payload_ref` (one ambiguous string) with explicit `connection_id`/`request_id`/`response_id` fields.
+- Established a lifetime rule for `RawHTTPRequest`/`RawHTTPResponse`: destroyed when a session ends, bounded by a memory budget and eviction policy, never retained indefinitely just because the app keeps running.
+- Removed "raw storage, if ever offered" from `PRIVACY_AND_SECURITY.md` — raw data never reaching disk is now an unconditional invariant, not a default with a hypothetical opt-out nobody asked for.
+- Documented `ObservationCapabilities` (what a provider can ever observe) as distinct from `ObservationStatus` (one observation's outcome right now) — not implemented yet, but named now so Phase 0.3/0.4 don't collapse the two into one field.
+- Added a fourth mandatory integration test: a provider's `transient_failure` must never be misread by the lifecycle-diffing logic as every tracked connection disappearing at once.
+- Consolidated "the Engine is the only component permitted to create or mutate domain state" into one explicit rule in `ARCHITECTURE.md`, rather than leaving it inferable from several scattered notes.
+**Why:** all of the above are either finishing a fix from ADR-011 that was applied inconsistently, or tightening wording to match what the rest of the document set already implied. None of it introduces new capability surface or a new document.

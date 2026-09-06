@@ -47,12 +47,14 @@ The core differentiator is the correlated view — process → connection → do
 
 The product should never collapse "I can't see the payload" into "I can't see anything." Each level should keep working even when a deeper level isn't available for a given process or connection:
 
-| Level | Question answered | Example | Always available? |
+| Level | Question answered | Example | Availability |
 |---|---|---|---|
-| 1 — Process | Who? | `Claude`, PID 9132 | Yes |
-| 2 — Network | Who is it talking to? | `api.example.com:443`, `localhost:8080` | Yes |
-| 3 — Protocol | How are they talking? | TCP/HTTPS, established, bytes sent/received | Yes |
-| 4 — Application payload | What are they saying? | `POST /v1/chat` → `200` | Only where observable |
+| 1 — Process | Who? | `Claude`, PID 9132 | Generally available |
+| 2 — Network | Who is it talking to? | `api.example.com:443`, `localhost:8080` | Where OS visibility permits |
+| 3 — Protocol | How are they talking? | TCP/HTTPS, established, bytes sent/received | Where OS/provider visibility permits |
+| 4 — Application payload | What are they saying? | `POST /v1/chat` → `200` | Only where technically observable |
+
+An earlier version of this table said Levels 2–3 were "always available," which quietly contradicted the rest of this document set — socket visibility can legitimately come back `permission_denied`, `unavailable`, or `stale` (see `docs/OBSERVATION_CONTRACT.md`). The product attempts Levels 1–3 wherever technically and legitimately available and explicitly reports when they're not — this table now says that instead of overclaiming it.
 
 A pinned-cert or non-HTTP connection still shows Levels 1–3 in full — "HTTPS, connected, bytes sent/received, contents unavailable" is a legitimate and useful answer, not a failure state. The precise status vocabulary behind this (`observed`/`unavailable`/`permission_denied`/`unsupported`/`stale`/`unmatched`) is defined in `docs/OBSERVATION_CONTRACT.md`.
 

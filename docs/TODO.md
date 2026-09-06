@@ -21,7 +21,7 @@ Two things stay true across every phase below, not just the ones that mention th
 
 **Models & providers**
 
-- [ ] Define `ProcessInfo` model (Pydantic)
+- [ ] Define `ProcessObservation` (provider-owned, raw) and `ProcessInfo` (Engine-owned, adds `status`) per `docs/DATA_MODEL.md` — a provider must never construct `ProcessInfo` directly, same discipline as the socket split below
 - [ ] Define `SocketObservation` (provider-owned, raw — no identity or lifecycle fields) and `SocketSnapshot` (immutable, point-in-time list of `SocketObservation`s) per `docs/DATA_MODEL.md`
 - [ ] Define `NetworkConnection` (Engine-owned domain state — `connection_id`, `lifecycle_state`, `first_seen`, `last_seen`) — a provider must never construct this type directly
 - [ ] Define `ObservationStatus` (state, observed_at, last_successful_at?, reason?, provider?) per `docs/DATA_MODEL.md` / `docs/OBSERVATION_CONTRACT.md`
@@ -29,16 +29,16 @@ Two things stay true across every phase below, not just the ones that mention th
 - [ ] Implement `ProcessProvider` (`psutil`, fallback to `ps` parsing if needed)
 - [ ] Define `SocketProvider` protocol (returns a `SocketSnapshot` of `SocketObservation`s — never a `NetworkConnection`)
 - [ ] Implement `SocketProvider` (`psutil`/system APIs where available, `lsof -i -n -P` fallback)
-- [ ] Sketch (protocol only, no second implementation yet) `DNSProvider` and `TrafficProvider` interfaces so later phases don't require reshaping earlier code
+- [ ] Stub bare `Protocol` classes for `DNSProvider` and `TrafficProvider` — signatures only, minimal. Don't design their final shape now: the Phase 0.3 mitmproxy spike will reveal real constraints a premature interface would likely get wrong, and ADR-003's guardrail (no swappable-backend machinery before a second implementation exists) applies to interface *detail*, not just to whether an interface exists at all
 - [ ] Implement provider-level statuses: `observed` / `unavailable` / `permission_denied` / `unsupported` / `transient_failure` per `docs/OBSERVATION_CONTRACT.md` — providers never emit `stale` or `unmatched`, those are Engine-derived
 
 **Observation Engine**
 
 - [ ] Define `ObservationEngine` responsibilities explicitly: consume `SocketSnapshot`s, diff successive snapshots into `NetworkConnection` lifecycle events, merge in `ProcessProvider` output, maintain current process/connection state, attach `ObservationStatus` to everything it emits, and emit normalized updates over the API/WebSocket layer — providers never talk to FastAPI or React directly
-- [ ] Implement connection identity: a deterministic strategy for matching a `SocketObservation` on snapshot N to the same logical connection on snapshot N+1, producing/reusing the right `connection_id`
-- [ ] Implement the `closed` vs. `expired` rule explicitly (`docs/DATA_MODEL.md`): `closed` requires positive evidence the connection ended; a connection that simply stops appearing in snapshots becomes `expired`, never silently `closed`
+- [ ] Implement connection identity as an Engine session identity, not an OS-level one: a deterministic-where-possible, heuristic-where-not strategy for matching a `SocketObservation` on snapshot N to the same logical connection on snapshot N+1. When matching confidence is insufficient, **prefer creating a new connection over merging into an existing one** — a false split is cosmetic, a false merge corrupts the timeline (`docs/DATA_MODEL.md`)
+- [ ] Implement the `closed` vs. `expired` rule explicitly (`docs/DATA_MODEL.md`): `closed` requires positive evidence the connection ended, which the polling-only providers in this phase generally cannot produce; a connection that simply stops appearing in snapshots becomes `expired`, never silently `closed`. Expect `discovered → active → expired` to be the normal path this phase, not `→ closed`.
 - [ ] Test connection matching against reused local ports and rapidly closed/reopened connections
-- [ ] Ensure one unavailable/failing provider is isolated and doesn't take down the whole observation session (surface its status instead)
+- [ ] Ensure one unavailable/failing provider is isolated and doesn't take down the whole observation session (surface its status instead) — and specifically, ensure a `transient_failure` from `SocketProvider` never gets misread as "all connections disappeared" (see the 4th mandatory test in `docs/TESTING_STRATEGY.md`)
 
 **Concurrency (asyncio, not Swift concurrency)**
 
@@ -69,7 +69,7 @@ Two things stay true across every phase below, not just the ones that mention th
 - [ ] Define monitoring state machine: `idle` / `starting` / `running` / `stopping` / `stopped` / `failed`
 - [ ] Track observation timestamp separately from `first_seen`/`last_seen`; surface "last updated" in the UI so a stalled poll never silently implies a live "ESTABLISHED right now" — this is exactly what `ObservationStatus.last_successful_at` is for
 - [ ] Handle selected-process termination: detect the PID no longer exists, stop monitoring it, mark it "process exited" in the UI, and keep its historical observations for the current session rather than clearing them
-- [ ] Emit `TrafficEvent`s for connection-opened/connection-closed (from the lifecycle transitions already implemented in `ObservationEngine`)
+- [ ] Emit `TrafficEvent`s for connection-opened/connection-closed (from the lifecycle transitions already implemented in `ObservationEngine`), using the explicit `connection_id`/`request_id`/`response_id` fields per event type rather than one ambiguous reference field (`docs/DATA_MODEL.md`)
 - [ ] Build first pass of the timeline view driven by those events
 - [ ] Define `HostnameObservation` model (connection_id, source, hostname, confidence)
 - [ ] Implement `DNSProvider` (reverse DNS lookup to start; SNI/Host-header sources land in Phase 0.4 once HTTP exists)
@@ -125,6 +125,7 @@ Two things stay true across every phase below, not just the ones that mention th
 - [ ] Design session storage format (local file, e.g. JSON/SQLite) capturing a full observation window
 - [ ] Decide and document: sessions are stored **redacted-only by default** — raw/unredacted storage, if ever offered, is an explicit opt-in, not the default
 - [ ] Define maximum body-preview size and header/session memory limits; truncate oversized captures safely instead of holding them in full
+- [ ] Implement the `RawHTTPRequest`/`RawHTTPResponse` lifetime rule from `docs/DATA_MODEL.md`: destroy raw transient objects when a session ends (not just dereference-and-hope), cap the number of retained raw objects per session, and define the eviction policy once that cap is hit
 - [ ] Ensure captured request/response contents are never written into general application logs, and reconfigure `uvicorn`'s access logging so request URLs (which can carry query-string secrets) aren't logged by the web framework itself, bypassing the `Redactor` entirely
 - [ ] Document where session files are stored on disk
 - [ ] Implement "start session" / "stop & save session"
@@ -164,7 +165,7 @@ Only pursue this if "I want other people to install this like a normal app" beco
 
 - [ ] Build a small deterministic `NetworkTestTarget` Python script early (useful starting in Phase 0.1, essential by 0.3) that generates known traffic on demand: a plain TCP connection, a short-lived connection, a long-lived connection, several simultaneous connections, a couple of HTTP(S) requests once Phase 0.3 exists, and requests carrying intentionally fake sensitive-looking fields for redaction testing. Same principle the source learning path opened with — verify the tool against traffic you already understand before pointing it at anything else.
 - [ ] Unit tests per provider (`pytest`, mock the system-call boundary so tests don't depend on real running processes)
-- [ ] Add integration tests for the observation pipeline using `NetworkTestTarget`: generate known connections/HTTP requests and verify they come out the other end with correct process attribution, connection identity, lifecycle events, hostname correlation, HTTP correlation, and redaction — unit tests per provider don't catch a correlation bug in `ObservationEngine`, only a test that exercises the full chain does. This includes the three mandatory tests in `docs/TESTING_STRATEGY.md`: process termination, polling-gap → `expired`, and correlation ambiguity → `unmatched`.
+- [ ] Add integration tests for the observation pipeline using `NetworkTestTarget`: generate known connections/HTTP requests and verify they come out the other end with correct process attribution, connection identity, lifecycle events, hostname correlation, HTTP correlation, and redaction — unit tests per provider don't catch a correlation bug in `ObservationEngine`, only a test that exercises the full chain does. This includes the four mandatory tests in `docs/TESTING_STRATEGY.md`: process termination, polling-gap → `expired`, correlation ambiguity → `unmatched`, and provider failure must not manufacture expiry.
 - [ ] Keep `docs/PERMISSIONS_AND_PLATFORM.md`'s VERIFIED/ASSUMED/DECISION tags current as permission reality gets discovered
 - [ ] Re-check the "explicitly out of scope" list (`docs/process-network-inspector-report.md` Section 2) at the start of every phase — no feature in this roadmap should ever grow into edit/replay/inject
 

@@ -44,10 +44,12 @@ ProcessProvider  SocketProvider  DNSProvider  TrafficProvider
 
 ## Dependency rules (enforce these in review, they're what keeps this clean)
 
+- **The Observation Engine is the only component permitted to create or mutate authoritative domain state** (`NetworkConnection`, `ProcessInfo`, `Flow`, and anything else defined as Engine-owned in `DATA_MODEL.md`). No shortcuts: not `Provider → API`, not `Provider → Session Store`, not `Provider → React`, not `TrafficProvider → NetworkConnection` directly. This is mostly already implied by the other rules below and by `DATA_MODEL.md`'s per-type ownership notes — stated once, explicitly, here, so it's one rule to check in review rather than something inferred from several scattered notes.
 - React components never construct or interpret raw provider data — only the API/WebSocket contract types the backend defines.
 - FastAPI route handlers contain no provider or correlation logic: call the Engine, serialize, return.
 - Providers never import FastAPI, the Engine, or each other.
 - Nothing writes to the Session Store except through the Redactor's mandatory path.
+- `ObservationStatus` (a specific observation's outcome right now) and `ObservationCapabilities` (what a provider can ever observe, independent of any one attempt) are distinct concepts — see `DATA_MODEL.md`. Don't collapse them into one status field once capability reporting is implemented in Phase 0.3.
 
 ## Error propagation
 

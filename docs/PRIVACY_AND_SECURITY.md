@@ -40,7 +40,9 @@ This is not a style preference — it's the difference between a session file on
 
 ## Storage & export
 
-- Sessions are stored **redacted-only by default**; raw storage, if ever offered, is an explicit, separately-gated opt-in.
+- **Sessions are always stored in redacted form. This is an unconditional invariant, not a default with a hypothetical opt-out.** An earlier version of this document left the door open to "raw storage, if ever offered, as an explicit opt-in" — that phrasing is dropped. It sat awkwardly next to the rest of this document's absolute language ("never persisted," "no reveal path"), nobody has asked for a raw-storage feature, and leaving the possibility documented costs nothing to remove and something real to keep: raw in memory, never disk, with no exception clause for a future feature to grow into.
+- Potentially-sensitive raw data (`RawHTTPRequest`/`RawHTTPResponse` in `DATA_MODEL.md`) may be retained transiently in memory during a live session only — never persisted, and destroyed (not just dereferenced) when the session ends. See `DATA_MODEL.md`'s lifetime rule for the memory-budget and eviction requirements this implies.
+- Highly-sensitive fields are never retained raw anywhere, including in memory — see the classification table above.
 - Maximum body-preview size and header/session memory limits are enforced at capture time (`DATA_MODEL.md`'s `body_preview` fields are truncated, not full bodies) — oversized captures are truncated safely rather than held in full.
 - Export (session as JSON, single flow as text) goes through the exact same mandatory redaction path as storage. There is no export code path that bypasses the Redactor.
 - Document where session files live on disk once Phase 0.6 implements storage, so a user can find and delete them without hunting.
