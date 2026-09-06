@@ -137,6 +137,7 @@ Two things stay true across every phase below, not just the ones that mention th
 - [ ] Finalize distribution path (code signing, notarization, or App Store submission prep per the Phase 0 decision)
 - [ ] **If pursuing the Network Extension upgrade for `TrafficProvider`:** file the entitlement request early — treat Apple's review lead time as its own milestone, not a drop-in swap (see report Section 7)
 - [ ] Write end-user README: what this tool does, what it deliberately does not do, and the "things you own or have permission to inspect" scope note from the original learning path
+- [ ] Run a full end-to-end regression pass before calling this 1.0: process discovery → socket observation → lifecycle tracking → DNS correlation → HTTP observation → redaction → session storage → session reopening. A checklist walkthrough is enough at this project's scale — this doesn't need CI infrastructure, just a deliberate pass through the whole chain instead of assuming the individual phase demo checkpoints still compose correctly together
 
 ---
 
@@ -144,9 +145,10 @@ Two things stay true across every phase below, not just the ones that mention th
 
 - [ ] Build a small deterministic `NetworkTestTarget` executable early (useful starting in Phase 0.1, essential by 0.3) that generates known traffic on demand: a plain TCP connection, a short-lived connection, a long-lived connection, several simultaneous connections, a couple of HTTP(S) requests once Phase 0.3 exists, and requests carrying intentionally fake sensitive-looking fields for redaction testing. Same principle the source learning path opened with — verify the tool against traffic you already understand before pointing it at anything else.
 - [ ] Unit tests per provider (mock the system-call boundary so tests don't depend on real running processes)
+- [ ] Add integration tests for the observation pipeline using `NetworkTestTarget`: generate known connections/HTTP requests and verify they come out the other end with correct process attribution, connection identity, lifecycle events, hostname correlation, HTTP correlation, and redaction — unit tests per provider don't catch a correlation bug in `ObservationEngine`, only a test that exercises the full chain does
 - [ ] Keep `PROVIDERS.md` or inline doc comments noting which provider capabilities are verified vs. assumed, updated as permission reality gets discovered
 - [ ] Re-check the "explicitly out of scope" list (report Section 2) at the start of every phase — no feature in this roadmap should ever grow into edit/replay/inject
 
 ## Definition of done for the whole project
 
-Select a running process and obtain Levels 1–3 (process, network, protocol) wherever those observations are technically and legitimately available, and Level 4 (HTTP payload) wherever technically and legitimately observable — with the UI explicitly communicating unavailable, denied, or stale observations rather than presenting them as empty or current. Sensitive data is redacted by default at the point of capture, before it ever reaches storage or export. Nothing in the app is capable of modifying, replaying, or injecting traffic.
+Select a running process and obtain Levels 1–3 (process, network, protocol) wherever those observations are technically and legitimately available, with the UI explicitly distinguishing **observed**, **denied**, **unsupported**, and **stale** information rather than presenting any of them as empty or current. Level 4 (HTTP/application payload) is available only where technically and legitimately observable, degrading to the same explicit categories rather than silence. Sensitive data is redacted by default at the point of capture, before it ever reaches storage or export. Nothing in the app is capable of modifying, replaying, or injecting traffic.
