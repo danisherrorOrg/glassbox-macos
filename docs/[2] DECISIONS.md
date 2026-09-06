@@ -26,9 +26,9 @@ Lightweight ADR log, one entry per decision that took real deliberation to reach
 
 ---
 
-### ADR-004: `Flow` deferred to v0.3, defined now
+### ADR-004: `Flow` deferred to Phase 0.5, defined now
 **Status:** Accepted
-**Decision:** The `Flow` type (wrapping a connection plus its attached observations) is written as a struct/model immediately, but the Engine and UI don't route through it until HTTP observation exists in v0.3.
+**Decision:** The `Flow` type (wrapping a connection plus its attached observations) is written as a struct/model immediately, but the Engine and UI don't route through it until Phase 0.5 (API Explorer), once HTTP observation exists.
 **Why:** Wiring it in earlier is architecture for a shape (multiple observation types per connection) that doesn't exist until HTTP arrives. Same YAGNI guardrail as ADR-003, applied to a data type instead of a provider.
 
 ---

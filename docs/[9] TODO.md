@@ -104,7 +104,7 @@ Two things stay true across every phase below, not just the ones that mention th
 - [ ] Add SNI and HTTP-`Host`-header as additional `HostnameObservation` sources (alongside reverse DNS from 0.2)
 - [ ] Implement the `Redactor` utility for the potentially-sensitive tier: header-based (`Cookie`, `Set-Cookie`) + body/query-field heuristics (configurable list), producing `HTTPRequest`/`HTTPResponse` from `RawHTTPRequest`/`RawHTTPResponse`
 - [ ] Unit-test the `Redactor`: header redaction, cookie redaction, query-parameter redaction, nested-JSON body-field redaction, case-insensitive matching, configurable custom field names
-- [ ] **Verify redaction happens before persistence/export, not only before display** — write a test that captures a request with a fake credential, saves/exports it, and asserts the credential never reaches disk unredacted (see the three mandatory integration tests in `docs/TESTING_STRATEGY.md`)
+- [ ] **Verify redaction happens before persistence/export, not only before display** — write a test that captures a request with a fake credential, saves/exports it, and asserts the credential never reaches disk unredacted (see the four mandatory integration tests in `docs/TESTING_STRATEGY.md`)
 - [ ] Build the API traffic view — method/URL/status/duration table
 - [ ] Build the request/response detail expansion view: redacted by default, "show anyway" reveals the paired `Raw*` object for the potentially-sensitive tier only, with highly-sensitive fields never displayable at all
 

@@ -19,7 +19,7 @@ ProcessObservation (provider) ──> ProcessInfo (Engine-owned, adds status)
                    └── HTTPResponse (redacted, storage-safe)
                             built from ──> RawHTTPResponse (transient, in-memory only)
           │
-          └── Flow (from v0.3 onward — wraps a connection + its observations)
+          └── Flow (from Phase 0.5 onward — wraps a connection + its observations)
 
 CorrelationEvidence ──> (Engine correlation) ──> NetworkConnection.connection_id
 ```
@@ -187,11 +187,11 @@ Attached to every domain object the Engine emits, rather than status being a loo
 | reason | Option\<String\> | no | human-readable detail for denied/unsupported/failure states |
 | provider | Option\<String\> | no | which provider/layer this status originates from, when relevant |
 
-## `Flow` (type defined now, wired in from v0.3 — see `DECISIONS.md`)
+## `Flow` (type defined now, wired in from Phase 0.5 — see `DECISIONS.md`)
 
 A protocol-agnostic wrapper around a connection plus its attached observations, so HTTP is one kind of observation attached to a flow rather than a parallel top-level entity. This is what makes adding QUIC/WebSocket/TLS metadata later an addition instead of a rewrite.
 
-**`NetworkConnection` and `Flow` are not interchangeable terms, even though both end up holding hostname/request/response references:** `NetworkConnection` represents an observed transport-level connection (a socket); `Flow` represents the higher-level logical conversation associated with that connection. Keep this distinction explicit once `Flow` is wired in at v0.3 — don't let the two grouping mechanisms silently merge into one in code just because their attached fields look similar today.
+**`NetworkConnection` and `Flow` are not interchangeable terms, even though both end up holding hostname/request/response references:** `NetworkConnection` represents an observed transport-level connection (a socket); `Flow` represents the higher-level logical conversation associated with that connection. Keep this distinction explicit once `Flow` is wired in at Phase 0.5 — don't let the two grouping mechanisms silently merge into one in code just because their attached fields look similar today.
 
 | Field | Type | Notes |
 |---|---|---|
