@@ -157,20 +157,20 @@ These are two different permission problems, worth keeping separate rather than 
 
 **First technical spike, regardless of anything else:** confirm exactly what an ordinary macOS app can read about other processes' sockets without elevated privileges, and what the escalation path looks like. This determines whether Phase 1 is trivial or the project's first real blocker.
 
-## 8. Stack decision
+## 8. Stack decision — revised
 
-**Swift + SwiftUI**, native, as the app's primary language and identity — this is a macOS system-observation application, which is exactly where native development earns its keep: permissions, process/socket APIs, and eventual Network Extension integration all live more naturally in a signed native app than a browser-facing Python service.
+**Superseded.** This section originally specified native Swift + SwiftUI. That decision has been reversed in favor of a **FastAPI backend + React frontend**, run locally rather than shipped as a native `.app`. Full reasoning, including what this change costs (the App Store/notarized distribution path is gone, and the Network Extension upgrade path for `TrafficProvider` is now effectively foreclosed rather than deferred), is recorded in `docs/DECISIONS.md` (ADR-008, superseded by ADR-009) — that document is now the source of truth for this decision, not this section.
 
-This is not "no Python anywhere" — the `TrafficProvider`'s first implementation will likely still be a helper process driving `mitmdump`, and that's fine, because it's contained behind the provider interface (Section 4) rather than woven through the app. External tools/helpers are used only where they solve a problem macOS APIs don't conveniently expose, and swapped out later without touching the UI or correlation layer.
+What doesn't change: every other section of this report (product principle, four-level visibility model, provider-based architecture, data model, redaction philosophy) is language-agnostic and carries over unmodified. See `docs/ARCHITECTURE.md`, `docs/DATA_MODEL.md`, `docs/OBSERVATION_CONTRACT.md`, `docs/PERMISSIONS_AND_PLATFORM.md`, `docs/PRIVACY_AND_SECURITY.md`, and `docs/TESTING_STRATEGY.md` for the FastAPI/React-specific detail this report's original Swift-era version doesn't carry.
 
 ```
-SwiftUI
+FastAPI (backend)
    +
-Swift
+React (frontend)
    +
-macOS APIs (ProcessProvider, SocketProvider, DNSProvider)
+Python system-call layer (ProcessProvider, SocketProvider, DNSProvider)
    +
-external helper only for TrafficProvider (mitmproxy-based, today)
+mitmproxy-based helper for TrafficProvider
 ```
 
 ## 9. Roadmap
