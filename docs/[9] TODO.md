@@ -6,6 +6,9 @@ Two things stay true across every phase below, not just the ones that mention th
 
 ---
 
+**Before Phase 0:** complete `pre-implementation/[3] TODO.md` — a design-verification
+gate run against this document set, separate from and prior to the checklist below.
+
 ## Phase 0 — Foundation (project setup, not a product milestone)
 
 - [ ] Set up the Tauri project: `cargo tauri init`, a `Cargo.toml` for the Rust core, `tauri.conf.json` configured with a minimal command allowlist/capabilities set (not "allow everything")
