@@ -62,6 +62,21 @@ current ordering.
 
 ## Status at a glance
 
-See `[3] TODO.md` for the live checklist. As of the first pass (Round 1, run
-2026-09-06), the design is **not yet cleared** for Phase 0.1 — one BLOCKING finding
-(`PIF-001`) is open. See `[2] FINDINGS.md` for detail.
+See `[3] TODO.md` for the live checklist. As of 2026-09-07, steps A–D have run:
+Round 1 (self-audit) and Round 2 (independent second-model audit) found 37 issues;
+Rounds 3–5 (re-verification passes) found 8 more, several of them fresh drift
+introduced by earlier rounds' own fixes rather than leftovers from the original
+design. All 44 findings (`PIF-001`–`PIF-044`) are resolved — 42 `Fixed`, 1
+`Deferred` (`PIF-016`, a cosmetic cross-reference cleanup, intentionally left for
+its own standalone commit), 1 `Not an issue`. **Zero findings are left `Open`, and
+none are `BLOCKING`.** The step D re-verification loop was stopped after Round 5 by
+an explicit decision — not because a round hit the project's literal "zero new
+findings" exit criterion — on the basis that three straight rounds produced zero
+new BLOCKING findings and the remaining churn had the shape of diminishing-returns
+drift rather than substantive gaps; see `[3] TODO.md` step D's note and
+`[2] FINDINGS.md`'s Round 5 section for the full reasoning.
+
+**Not yet done:** step E's owner sign-off (a human read of `[2] FINDINGS.md`
+end-to-end, separate from the checklist having no open boxes) has not happened yet.
+Step F (the empirical permissions spike) also has not started. Both are outstanding
+before `docs/[9] TODO.md` Phase 0.1 begins.

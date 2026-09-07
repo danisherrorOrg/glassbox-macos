@@ -89,29 +89,50 @@ scoped, not as the actual done-list.
       had a two-part proposed fix where one part was missed. Both corrected in
       commit `85249b0`, along with one new low-stakes item (PIF-038, fixed same
       commit) and one confirmed non-issue (PIF-039). Zero new BLOCKING findings.
-- [ ] Repeat A–D until a round produces zero new BLOCKING/SHOULD-FIX findings.
-      Still not satisfied. Round 4 (2026-09-07) confirmed all three Round 3
-      corrections landed cleanly, but a fresh full pass found one more real
-      SHOULD-FIX item (PIF-040: `RawHTTPRequest`/`RawHTTPResponse` had no field
-      table or ownership tag — the one type in `DATA_MODEL.md` missing one) plus
-      two trivial WORTH-NOTING items (PIF-041, PIF-042). All three fixed
-      immediately, commit `1354e73`. Findings per round so far: 37 → 3 → 3
-      (Round 4 found 1 SHOULD-FIX + 2 WORTH-NOTING = 3 total, not literally
-      shrinking from Round 3's 3, but Round 3's were regressions from Round 2's
-      own fix pass, while Round 4's are freshly discovered — different character).
-      Running Round 5 to check convergence.
+- [x] Repeat A–D until a round produces zero new BLOCKING/SHOULD-FIX findings.
+      **Stopped short of this literal exit condition by explicit decision,
+      2026-09-07, after Round 5** — not because a round actually hit zero. Round 4
+      found one real SHOULD-FIX item (PIF-040) plus two trivial ones; Round 5 found
+      one more real SHOULD-FIX item (PIF-043) — notably, fresh drift introduced by
+      Round 4's own fix, not a leftover from the original design — plus one trivial
+      item. All fixed (commits `1354e73`, `ea7ac0e`). At that point, three straight
+      re-verification rounds (3, 4, 5) had produced zero new BLOCKING findings, and
+      the remaining churn had the shape of diminishing-returns drift (each fix
+      pass risked introducing a new small inconsistency elsewhere) rather than
+      substantive design gaps. Asked the project owner whether to run Round 6, do
+      a lighter self-check, or stop — chose to stop and proceed to step E. This is
+      a real deviation from the loop's stated exit condition, recorded here rather
+      than silently treated as satisfied; if a design gap surfaces during Phase
+      0.1 implementation that a Round 6 would plausibly have caught, that's the
+      cost of this decision.
 
 ## E — Final gate before Phase 0.1
 
-- [ ] All BLOCKING findings in `[2] FINDINGS.md` are `Fixed` (none left `Open`).
-- [ ] All SHOULD-FIX findings are either `Fixed` or explicitly `Deferred` with a
-      reason and a phase they're deferred *to*.
-- [ ] The ADR from step C is committed in `docs/[2] DECISIONS.md`.
+- [x] All BLOCKING findings in `[2] FINDINGS.md` are `Fixed` (none left `Open`).
+      Verified 2026-09-07: every `BLOCKING`-severity entry (`PIF-001`, `PIF-007`,
+      `PIF-008`, `PIF-009`, `PIF-010`, `PIF-028`, plus PIF-002/006's Round-2-rated
+      BLOCKING severity) shows `Status: Fixed`.
+- [x] All SHOULD-FIX findings are either `Fixed` or explicitly `Deferred` with a
+      reason and a phase they're deferred *to*. Verified 2026-09-07: 42 `Fixed`,
+      1 `Deferred` (`PIF-016`, to a standalone Phase 0 commit, reason recorded),
+      1 `Not an issue` (`PIF-039`, reason recorded). Zero left `Open`.
+- [x] The ADR from step C is committed in `docs/[2] DECISIONS.md`. ADR-014,
+      commit `fc4ec5e`.
 - [ ] **Owner sign-off:** you've actually read `[2] FINDINGS.md` end to end and are
       comfortable freezing the design on these terms — not just "the checklist has
-      no open boxes."
-- [ ] `[0] README.md`'s "Status at a glance" is updated to reflect the cleared state.
+      no open boxes." **This is a human step — not something an agent can do on
+      the owner's behalf.** In particular, worth deliberately re-reading: the step
+      D loop-stop decision above (a real deviation from the stated exit condition,
+      not a technicality), and PIF-002/PIF-006's severity note (Round 2 rated them
+      BLOCKING where Round 1 didn't — both were fixed regardless, but the
+      disagreement itself is worth the owner's own read, not just this agent's
+      resolution of it).
+- [x] `[0] README.md`'s "Status at a glance" is updated to reflect the cleared
+      state (including the step D loop-stop decision and step F's outstanding
+      status), 2026-09-07.
 - [ ] Only then: start `docs/[9] TODO.md` Phase 0 (project setup) and Phase 0.1.
+      Blocked on the owner sign-off above, and on step F (below) per its own
+      hard constraint.
 
 ## F — Permissions spike (empirical, not a doc audit)
 
