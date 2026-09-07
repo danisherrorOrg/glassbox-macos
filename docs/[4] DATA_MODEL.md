@@ -175,13 +175,12 @@ The Engine matches `CorrelationEvidence` against known `NetworkConnection`s. A c
 
 ## `RawHTTPRequest` / `RawHTTPResponse` (provider-owned, transient, in-memory only — never persisted)
 
-What `TrafficProvider` actually captured — returned directly from its trait method, after the mitmproxy addon's tier-1 (highly-sensitive) redaction has already run, before the Engine's `Redactor` produces `HTTPRequest`/`HTTPResponse` from it. This is a provider-owned type, same discipline as `SocketObservation`/`ProcessObservation`: the Engine never constructs it, only consumes it as the `Redactor`'s input. It's also the source a "show anyway" UI action reveals from, via `reveal_raw(request_id)`.
+What `TrafficProvider` actually captured — returned directly from its trait method, after the mitmproxy addon's tier-1 (highly-sensitive) redaction has already run, before the Engine's `Redactor` produces `HTTPRequest`/`HTTPResponse` from it. This is a provider-owned type, same discipline as `SocketObservation`/`ProcessObservation`: it carries **no Engine-assigned identity of any kind** — no `connection_id`, no `request_id`/`response_id` — for the same reason `SocketObservation` carries no `connection_id`: that identity doesn't exist yet at capture time, and a provider-owned type must never hold a field only the Engine is allowed to populate. It's also the source a "show anyway" UI action reveals from, via `reveal_raw(request_id)` — see the lookup mechanism below for how that command actually finds one of these once neither the request nor the response can carry an Engine ID itself.
 
 **Highly-sensitive fields (`Authorization`, API keys, passwords, tokens, credentials — see `PRIVACY_AND_SECURITY.md`'s classification) are stripped even here, at capture time, and never exist in raw form anywhere, including memory.** Only the "potentially sensitive" tier (URLs, query params, bodies, cookies, non-auth headers) is held raw transiently. Capture-time (tier-1) redaction runs inside the mitmproxy helper addon itself, before any value crosses the helper→core IPC socket — see `PRIVACY_AND_SECURITY.md`'s "two redaction checkpoints" for exactly where.
 
 | Field (`RawHTTPRequest`) | Type | Required |
 |---|---|---|
-| connection_id | Option\<String\> | no — `None` when correlation hasn't happened yet or was insufficiently confident, same meaning as `HTTPRequest.connection_id` |
 | method | String | yes |
 | host | String | yes |
 | path | String | yes |
@@ -191,11 +190,12 @@ What `TrafficProvider` actually captured — returned directly from its trait me
 
 | Field (`RawHTTPResponse`) | Type | Required |
 |---|---|---|
-| request_id | Option\<String\> | no — mirrors `RawHTTPRequest.connection_id`'s optionality; may not be assigned yet at raw-capture time |
 | status_code | u16 | yes |
 | headers | HashMap\<String, String\> | yes — tier-1 fields already redacted by the mitmproxy addon; tier-2 fields present raw |
 | body | Option\<String\> | no — full body, same truncation note as `RawHTTPRequest.body` |
 | duration_ms | f64 | yes |
+
+**How a captured flow reaches the Engine, and how `reveal_raw` finds it again:** `TrafficProvider`'s trait method returns each captured flow as a triple — `(RawHTTPRequest, Option<RawHTTPResponse>, CorrelationEvidence)` — not the raw types alone. The `CorrelationEvidence` is what the Engine correlates against `NetworkConnection`s (per the rule under `CorrelationEvidence` below); the `Raw*` pair is what the `Redactor` consumes to produce `HTTPRequest`/`HTTPResponse`. Only once the Redactor processes a pair does the Engine mint `request_id`/`response_id` and record `request_id → (RawHTTPRequest, Option<RawHTTPResponse>)` in a session-scoped in-memory map — that map, not a field on the `Raw*` objects themselves, is what `reveal_raw(request_id)` looks up. The map entry is destroyed under the same lifetime rule as the `Raw*` objects it references (below), and is never itself persisted.
 
 **Lifetime rule, not left implicit:** these objects exist only as long as the live monitoring session that captured them, not indefinitely just because the process/session object itself stays alive. When a session stops, its `Raw*` objects are destroyed, not merely dropped-and-hoped-for-cleanup. A long-running session must not be allowed to accumulate raw sensitive data without bound — enforce, at minimum: a maximum body-preview size per object, a cap on the number of retained raw requests/responses, and a session-level memory budget with an eviction policy once it's hit. None of this needs full implementation in Phase 0.1, but the rule is established here so a later phase doesn't have to retrofit it onto data that's already been designed to linger.
 

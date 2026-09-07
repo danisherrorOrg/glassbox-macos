@@ -79,7 +79,7 @@ HTTP body                     ⚠ Limited
 Raw packet data               ✕
 ```
 
-This mock's rows correspond to the fields of `ObservationCapabilities` in `docs/DATA_MODEL.md`, which is the authoritative field list (implemented in Phase 0.3, panel UI built in Phase 1.0) — treat that document as canonical if the two ever appear to disagree, rather than updating one from the other by hand.
+This mock's rows correspond to the fields of `ObservationCapabilities` in `docs/DATA_MODEL.md`, which is the authoritative field list (implemented in Phase 0.3, panel UI built in Phase 1.0) — treat that document as canonical if the two ever appear to disagree, rather than updating one from the other by hand. The mock's single "HTTP body" row deliberately combines `DATA_MODEL.md`'s separate `request_body`/`response_body` fields into one display row for space — that's a display choice, not a missed field.
 
 ## 4. Where the rest of the design lives
 
