@@ -6,7 +6,7 @@
 use std::sync::Mutex;
 
 use crate::models::{HostnameObservation, ProcessSnapshot, ProviderStatus, SocketSnapshot};
-use crate::providers::{DNSProvider, ProcessProvider, SocketProvider};
+use crate::providers::{CapturedFlow, DNSProvider, ProcessProvider, SocketProvider, TrafficProvider};
 
 pub struct MockProcessProvider {
     snapshots: Mutex<Vec<ProcessSnapshot>>,
@@ -80,5 +80,32 @@ pub struct MockDnsProvider;
 impl DNSProvider for MockDnsProvider {
     fn resolve(&self, _addr: &str) -> (Option<HostnameObservation>, ProviderStatus) {
         (None, ProviderStatus::observed(chrono::Utc::now()))
+    }
+}
+
+/// Preloaded with the flows `take_flows` should return — good enough for
+/// correlation-matching tests, which don't need a real subprocess/IPC.
+#[derive(Default)]
+pub struct MockTrafficProvider {
+    flows: Mutex<Vec<CapturedFlow>>,
+}
+
+impl MockTrafficProvider {
+    pub fn with_flows(flows: Vec<CapturedFlow>) -> Self {
+        Self {
+            flows: Mutex::new(flows),
+        }
+    }
+}
+
+impl TrafficProvider for MockTrafficProvider {
+    fn start(&self, _pid: u32) -> ProviderStatus {
+        ProviderStatus::observed(chrono::Utc::now())
+    }
+
+    fn stop(&self) {}
+
+    fn take_flows(&self) -> Vec<CapturedFlow> {
+        std::mem::take(&mut self.flows.lock().unwrap())
     }
 }

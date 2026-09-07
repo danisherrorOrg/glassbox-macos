@@ -14,7 +14,10 @@ use tauri::{AppHandle, Emitter, State};
 use tokio::sync::Mutex;
 
 use crate::engine::ObservationEngine;
-use crate::models::{Envelope, NetworkConnection, ProcessInfo, ResolvedHostname, TrafficEvent};
+use crate::models::{
+    Envelope, NetworkConnection, ObservationCapabilities, ProcessInfo, ProviderStatus,
+    ResolvedHostname, TrafficEvent,
+};
 
 pub use monitoring::{MonitoringController, MonitoringHandle};
 
@@ -67,4 +70,40 @@ pub async fn get_timeline(
 ) -> Result<Envelope<Vec<TrafficEvent>>, ()> {
     let engine = state.lock().await;
     Ok(engine.get_timeline(pid))
+}
+
+/// `get_capabilities()` (`docs/[9] TODO.md` Phase 0.3) — what each provider
+/// can *ever* observe, aggregated per provider, distinct from any single
+/// connection's `ObservationStatus` (`docs/DATA_MODEL.md`).
+#[tauri::command]
+pub async fn get_capabilities(state: State<'_, EngineHandle>) -> Result<ObservationCapabilities, ()> {
+    let engine = state.lock().await;
+    Ok(engine.get_capabilities())
+}
+
+#[tauri::command]
+pub async fn start_traffic_capture(pid: u32, state: State<'_, EngineHandle>) -> Result<ProviderStatus, ()> {
+    let mut engine = state.lock().await;
+    Ok(engine.start_traffic_capture(pid))
+}
+
+#[tauri::command]
+pub async fn stop_traffic_capture(state: State<'_, EngineHandle>) -> Result<(), ()> {
+    let mut engine = state.lock().await;
+    engine.stop_traffic_capture();
+    Ok(())
+}
+
+/// Drains and correlates whatever the traffic provider has captured since
+/// the last poll — the Phase 0.3 "debug log" the demo checkpoint asks for
+/// (`docs/[9] TODO.md`). Not yet wired into `NetworkConnection`/
+/// `get_connections` output or emitted as an event; that Engine-attachment
+/// step is explicitly Phase 0.4, once `HTTPRequest`/`HTTPResponse` and the
+/// `Redactor` exist to produce what would actually get attached.
+#[tauri::command]
+pub async fn poll_traffic_flows(
+    state: State<'_, EngineHandle>,
+) -> Result<Vec<(crate::providers::CapturedFlow, Option<String>)>, ()> {
+    let engine = state.lock().await;
+    Ok(engine.poll_traffic_flows())
 }

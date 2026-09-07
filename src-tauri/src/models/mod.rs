@@ -1,6 +1,7 @@
 //! Provider-owned observation types and Engine-owned domain state.
 //! See `docs/DATA_MODEL.md`.
 
+mod capabilities;
 mod connection;
 mod envelope;
 mod event;
@@ -10,7 +11,11 @@ mod monitoring;
 mod process;
 mod socket;
 mod status;
+mod traffic;
 
+pub use capabilities::{
+    Availability, LimitedAvailability, ObservationCapabilities, ProviderCapabilities,
+};
 pub use connection::{LifecycleState, NetworkConnection};
 pub use envelope::Envelope;
 pub use event::{TrafficEvent, TrafficEventType};
@@ -24,3 +29,4 @@ pub use status::{
     polling_stale_threshold, ObservationState, ObservationStatus, Provider, ProviderState,
     ProviderStatus, PHASE_0_1_STALE_THRESHOLD_SECONDS,
 };
+pub use traffic::{CorrelationEvidence, RawHTTPRequest, RawHTTPResponse};

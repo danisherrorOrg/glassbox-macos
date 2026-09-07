@@ -38,6 +38,10 @@ Usage:
         Scenarios: plain_tcp, short_lived, long_lived, simultaneous,
         local_connection, http, https, large_response, slow_response,
         sensitive_fields
+
+Set NT_HTTP_PORT/NT_HTTPS_PORT to run more than one instance at once
+without a port conflict (default 8765/8766) — e.g. for a test that needs
+both a targeted process and an unrelated one running simultaneously.
 """
 
 import http.client
@@ -71,8 +75,8 @@ def detect_lan_ip():
 BIND_HOST = "0.0.0.0"  # servers accept on every interface, including loopback
 LAN_HOST = detect_lan_ip()  # what most scenarios connect *to* — see module docstring
 LOOPBACK_HOST = "127.0.0.1"  # what `local_connection` deliberately connects to instead
-HTTP_PORT = 8765
-HTTPS_PORT = 8766
+HTTP_PORT = int(os.environ.get("NT_HTTP_PORT", 8765))
+HTTPS_PORT = int(os.environ.get("NT_HTTPS_PORT", 8766))
 CERT_DIR = Path(__file__).parent / "certs"
 CERT_FILE = CERT_DIR / "cert.pem"
 KEY_FILE = CERT_DIR / "key.pem"

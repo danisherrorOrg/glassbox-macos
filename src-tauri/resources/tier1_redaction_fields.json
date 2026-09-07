@@ -1,0 +1,26 @@
+{
+  "$comment": "Tier-1 (highly-sensitive) field names, capture-time, irreversible. See docs/PRIVACY_AND_SECURITY.md 'Starter sensitive-field list'. Matching is case-insensitive substring against the leaf key name only, never the value. This is the single source of truth both the mitmproxy addon (src-tauri/resources/mitm_addon.py) and the Rust core's future tier-2 Redactor (Phase 0.4) read -- neither maintains its own separate copy, so the two can't drift apart. User-extendable (Phase 0.4's 'configurable list'), never user-shrinkable below this baseline.",
+  "header_names": [
+    "authorization",
+    "proxy-authorization",
+    "x-api-key",
+    "api-key",
+    "x-auth-token",
+    "x-access-token",
+    "authentication"
+  ],
+  "body_query_keys": [
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "api_key",
+    "apikey",
+    "access_key",
+    "private_key",
+    "client_secret",
+    "refresh_token",
+    "session_id",
+    "credential"
+  ]
+}

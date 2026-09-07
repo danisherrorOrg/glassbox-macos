@@ -41,6 +41,14 @@ impl ProviderStatus {
             reason: Some(reason.into()),
         }
     }
+
+    pub fn unavailable(now: DateTime<Utc>, reason: impl Into<String>) -> Self {
+        Self {
+            state: ProviderState::Unavailable,
+            observed_at: now,
+            reason: Some(reason.into()),
+        }
+    }
 }
 
 /// The full seven-value vocabulary a consumer of the API ever sees. Only the

@@ -16,6 +16,13 @@ pub trait DNSProvider: Send + Sync {
     /// call, not a whole-layer snapshot the way `ProcessProvider`/
     /// `SocketProvider` are (`docs/OBSERVATION_CONTRACT.md`'s DNS layer).
     fn resolve(&self, addr: &str) -> (Option<HostnameObservation>, ProviderStatus);
+
+    fn capabilities(&self) -> crate::models::ProviderCapabilities {
+        crate::models::ProviderCapabilities {
+            dns: Some(crate::models::Availability::Available),
+            ..Default::default()
+        }
+    }
 }
 
 pub struct ReverseDnsProvider;

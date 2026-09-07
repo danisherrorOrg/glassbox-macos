@@ -53,6 +53,13 @@ fn derive_name(executable_path: &Option<String>, fallback: &str) -> String {
 
 pub trait ProcessProvider: Send + Sync {
     fn snapshot(&self) -> ProcessSnapshot;
+
+    fn capabilities(&self) -> crate::models::ProviderCapabilities {
+        crate::models::ProviderCapabilities {
+            process: Some(crate::models::Availability::Available),
+            ..Default::default()
+        }
+    }
 }
 
 /// Holds one `System` across calls, refreshed in place rather than rebuilt

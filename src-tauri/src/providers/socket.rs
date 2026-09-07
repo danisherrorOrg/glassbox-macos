@@ -24,6 +24,14 @@ pub trait SocketProvider: Send + Sync {
     /// Whether `pid` is owned by the current user (and therefore whether
     /// its sockets are visible to this provider at all without elevation).
     fn is_permitted(&self, pid: u32) -> bool;
+
+    fn capabilities(&self) -> crate::models::ProviderCapabilities {
+        crate::models::ProviderCapabilities {
+            sockets: Some(crate::models::Availability::Available),
+            remote_addresses: Some(crate::models::Availability::Available),
+            ..Default::default()
+        }
+    }
 }
 
 pub struct NetstatSocketProvider;

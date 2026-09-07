@@ -17,7 +17,9 @@ use std::sync::Arc;
 
 use commands::{EngineHandle, MonitoringController, MonitoringHandle};
 use engine::ObservationEngine;
-use providers::{NetstatSocketProvider, ReverseDnsProvider, SysinfoProcessProvider};
+use providers::{
+    MitmproxyTrafficProvider, NetstatSocketProvider, ReverseDnsProvider, SysinfoProcessProvider,
+};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -25,6 +27,7 @@ pub fn run() {
         Box::new(SysinfoProcessProvider::new()),
         Box::new(NetstatSocketProvider),
         Arc::new(ReverseDnsProvider),
+        Box::new(MitmproxyTrafficProvider::default()),
     );
 
     tauri::Builder::default()
@@ -35,6 +38,10 @@ pub fn run() {
             commands::get_connections,
             commands::get_hostnames,
             commands::get_timeline,
+            commands::get_capabilities,
+            commands::start_traffic_capture,
+            commands::stop_traffic_capture,
+            commands::poll_traffic_flows,
             commands::monitoring::start_monitoring,
             commands::monitoring::stop_monitoring,
             commands::monitoring::get_monitoring_status,

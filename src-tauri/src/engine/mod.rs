@@ -13,11 +13,12 @@ use std::sync::Arc;
 use chrono::{DateTime, Duration, Utc};
 
 use crate::models::{
-    polling_stale_threshold, Envelope, HostnameObservation, LifecycleState, NetworkConnection,
-    ObservationState, ObservationStatus, ProcessInfo, ProcessState, Protocol, Provider,
-    ProviderState, ResolvedHostname, TrafficEvent, TrafficEventType, PHASE_0_1_STALE_THRESHOLD_SECONDS,
+    polling_stale_threshold, CorrelationEvidence, Envelope, HostnameObservation, LifecycleState,
+    NetworkConnection, ObservationCapabilities, ObservationState, ObservationStatus, ProcessInfo,
+    ProcessState, Protocol, Provider, ProviderState, ProviderStatus, ResolvedHostname,
+    TrafficEvent, TrafficEventType, PHASE_0_1_STALE_THRESHOLD_SECONDS,
 };
-use crate::providers::{DNSProvider, ProcessProvider, SocketProvider};
+use crate::providers::{CapturedFlow, DNSProvider, ProcessProvider, SocketProvider, TrafficProvider};
 
 /// Engine-tracked record for one process — the subset of `ProcessInfo`
 /// that's persisted across refreshes; `status`/`active_connection_count`
@@ -56,6 +57,7 @@ pub struct ObservationEngine {
     process_provider: Box<dyn ProcessProvider>,
     socket_provider: Box<dyn SocketProvider>,
     dns_provider: Arc<dyn DNSProvider>,
+    traffic_provider: Box<dyn TrafficProvider>,
     processes: HashMap<u32, TrackedProcess>,
     connections: HashMap<String, NetworkConnection>,
     next_connection_seq: u64,
@@ -95,11 +97,13 @@ impl ObservationEngine {
         process_provider: Box<dyn ProcessProvider>,
         socket_provider: Box<dyn SocketProvider>,
         dns_provider: Arc<dyn DNSProvider>,
+        traffic_provider: Box<dyn TrafficProvider>,
     ) -> Self {
         Self {
             process_provider,
             socket_provider,
             dns_provider,
+            traffic_provider,
             processes: HashMap::new(),
             connections: HashMap::new(),
             next_connection_seq: 0,
@@ -553,6 +557,115 @@ impl ObservationEngine {
             .collect();
         Envelope::ok(status, data)
     }
+
+    /// Starts traffic capture for `pid` (`docs/[9] TODO.md` Phase 0.3).
+    pub fn start_traffic_capture(&mut self, pid: u32) -> ProviderStatus {
+        self.traffic_provider.start(pid)
+    }
+
+    pub fn stop_traffic_capture(&mut self) {
+        self.traffic_provider.stop();
+    }
+
+    /// Drains whatever flows the traffic provider has captured since the
+    /// last call, pairing each with the `connection_id` it correlates to
+    /// (if any) — the Phase 0.3 "spike, independently of the UI" item.
+    /// Does **not** attach anything to `NetworkConnection` itself or emit
+    /// `TrafficEvent`s for `Request`/`Response` — that Engine-wiring step
+    /// is explicitly Phase 0.4 (`docs/[9] TODO.md`), once `HTTPRequest`/
+    /// `HTTPResponse` and the `Redactor` exist to produce what would
+    /// actually get attached.
+    pub fn poll_traffic_flows(&self) -> Vec<(CapturedFlow, Option<String>)> {
+        self.traffic_provider
+            .take_flows()
+            .into_iter()
+            .map(|flow| {
+                let matched = self.correlate(&flow.evidence);
+                (flow, matched)
+            })
+            .collect()
+    }
+
+    /// `CorrelationEvidence` → `NetworkConnection` matching. Matches on
+    /// `(pid, remote_addr, remote_port)` only — **not** the full 6-tuple
+    /// `docs/DATA_MODEL.md`'s socket-to-socket matching rule uses. This is
+    /// a deliberate, empirically-driven difference: the Phase 0.3 spike
+    /// (`docs/PERMISSIONS_AND_PLATFORM.md`) found that `mitmproxy`'s
+    /// `local:<pid>` capture never exposes a usable `local_addr`/
+    /// `local_port` — `client_conn` reflects the local redirector's own
+    /// loopback stub connection, not the real originating socket — so
+    /// `CorrelationEvidence.local_addr`/`local_port` are always `None` in
+    /// practice for this provider. `pid` is filled in independently by the
+    /// Rust core (it already knows which pid a capture session targets),
+    /// not read from the evidence the provider itself produced.
+    ///
+    /// Per the split-over-merge policy already established for socket
+    /// matching: zero or more-than-one equally-good candidate is treated
+    /// as no match — a `connection_id` is never fabricated when confidence
+    /// is insufficient (`docs/[9] TODO.md`'s explicit review principle).
+    ///
+    /// **Candidates are not restricted to `Discovered`/`Active`, unlike the
+    /// socket-to-socket matching rule.** An earlier version of this method
+    /// copied that restriction over, reasoning by analogy — and the Phase
+    /// 0.3 spike's own integration test (`real_traffic_capture_correlates_
+    /// to_real_connection`) caught it as wrong empirically: real HTTP/1.0
+    /// requests against `test-target` routinely complete and their
+    /// connection closes (transitioning to `Expired`) *faster* than the
+    /// socket-polling interval, so by the time a captured flow is actually
+    /// available to correlate, the connection it belongs to has often
+    /// already left `Active`. Excluding `Expired`/`Closed` candidates here
+    /// doesn't prevent the same kind of ambiguity the socket rule guards
+    /// against (this method's own zero-or-multiple-candidates check
+    /// already does that, independent of lifecycle state) — it just
+    /// silently produced `unmatched` for the *ordinary*, expected case.
+    /// `connection_id` stays valid and meaningful for the life of the
+    /// tracked connection object regardless of its current
+    /// `lifecycle_state`, so there's no correctness reason to exclude any
+    /// state here.
+    pub fn correlate(&self, evidence: &CorrelationEvidence) -> Option<String> {
+        let pid = evidence.pid?;
+        let remote_addr = evidence.remote_addr.as_deref()?;
+        let remote_port = evidence.remote_port?;
+
+        let mut candidates = self.connections.values().filter(|c| {
+            c.pid == pid
+                && c.remote_addr.as_deref() == Some(remote_addr)
+                && c.remote_port == Some(remote_port)
+        });
+
+        let first = candidates.next()?;
+        if candidates.next().is_some() {
+            return None; // ambiguous — more than one equally-good match
+        }
+        Some(first.connection_id.clone())
+    }
+
+    /// `get_capabilities()` (`docs/[9] TODO.md` Phase 0.3): Engine-aggregated
+    /// from each provider's own self-report. Each provider only ever sets
+    /// the fields it owns (see `docs/DATA_MODEL.md`'s `ObservationCapabilities`)
+    /// — this method reads exactly those fields from each and defaults
+    /// everything else to the least-capable value, rather than attempting a
+    /// generic merge across providers that could let one's silence
+    /// overwrite another's real answer.
+    pub fn get_capabilities(&self) -> ObservationCapabilities {
+        let process = self.process_provider.capabilities();
+        let socket = self.socket_provider.capabilities();
+        let dns = self.dns_provider.capabilities();
+        let traffic = self.traffic_provider.capabilities();
+
+        use crate::models::{Availability, LimitedAvailability};
+        ObservationCapabilities {
+            process: process.process.unwrap_or(Availability::Unavailable),
+            sockets: socket.sockets.unwrap_or(Availability::Unavailable),
+            remote_addresses: socket.remote_addresses.unwrap_or(Availability::Unavailable),
+            dns: dns.dns.unwrap_or(Availability::Unavailable),
+            http_metadata: traffic.http_metadata.unwrap_or(LimitedAvailability::Unsupported),
+            https_metadata: traffic.https_metadata.unwrap_or(LimitedAvailability::Unsupported),
+            request_body: traffic.request_body.unwrap_or(LimitedAvailability::Unsupported),
+            response_body: traffic.response_body.unwrap_or(LimitedAvailability::Unsupported),
+            raw_packet_data: traffic.raw_packet_data.unwrap_or(Availability::Unavailable),
+        }
+    }
 }
 
 /// Engine tests for the mandatory scenarios in `docs/TESTING_STRATEGY.md`
@@ -624,7 +737,7 @@ mod engine_tests {
             socket_snapshot_established(t0, 100),
             socket_snapshot_empty(t1),
         ]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Box::new(crate::tests::MockTrafficProvider::default()));
 
         let processes = engine.get_processes();
         assert_eq!(
@@ -661,7 +774,7 @@ mod engine_tests {
             socket_snapshot_established(t0, 200),
             socket_snapshot_empty(t1), // same PID still running, socket just gone
         ]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Box::new(crate::tests::MockTrafficProvider::default()));
 
         let first = engine.get_connections(200);
         assert_eq!(
@@ -693,7 +806,7 @@ mod engine_tests {
                 status: ProviderStatus::transient_failure(t1, "netstat2 call failed"),
             },
         ]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Box::new(crate::tests::MockTrafficProvider::default()));
 
         let first = engine.get_connections(300);
         let first_conn = first.data.unwrap()[0].clone();
@@ -725,7 +838,7 @@ mod engine_tests {
         let process = MockProcessProvider::new(vec![process_snapshot(t0, &[400])]);
         let socket =
             MockSocketProvider::new(vec![socket_snapshot_empty(t0)]).with_denied_pids(vec![999]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Box::new(crate::tests::MockTrafficProvider::default()));
 
         let result = engine.get_connections(999);
         assert_eq!(result.status.state, ObservationState::PermissionDenied);
@@ -758,7 +871,7 @@ mod engine_tests {
         listen_snapshot_2.status = ProviderStatus::observed(t1);
 
         let socket = MockSocketProvider::new(vec![listen_snapshot, listen_snapshot_2]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Box::new(crate::tests::MockTrafficProvider::default()));
 
         let first = engine.get_connections(500);
         assert_eq!(
@@ -785,6 +898,7 @@ mod engine_tests {
             Box::new(crate::providers::SysinfoProcessProvider::new()),
             Box::new(crate::providers::NetstatSocketProvider),
             Arc::new(crate::providers::ReverseDnsProvider),
+            Box::new(crate::providers::MitmproxyTrafficProvider::default()),
         );
 
         let own_pid = std::process::id();
@@ -818,6 +932,7 @@ mod engine_tests {
             Box::new(crate::providers::SysinfoProcessProvider::new()),
             Box::new(crate::providers::NetstatSocketProvider),
             Arc::new(crate::providers::ReverseDnsProvider),
+            Box::new(crate::providers::MitmproxyTrafficProvider::default()),
         );
         let connections = engine.get_connections(own_pid);
         let data = connections.data.expect("get_connections must carry data when observed");
@@ -862,7 +977,7 @@ mod engine_tests {
             snap2,
             snap3,
         ]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Box::new(crate::tests::MockTrafficProvider::default()));
 
         let first_id = engine.get_connections(600).data.unwrap()[0].connection_id.clone();
         let after_gap = engine.get_connections(600);
@@ -907,7 +1022,7 @@ mod engine_tests {
             socket_snapshot_established(t0, 700),
             socket_snapshot_empty(t1),
         ]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Box::new(crate::tests::MockTrafficProvider::default()));
 
         engine.get_processes(); // t0: consumes the "running" process snapshot
         engine.get_connections(700); // t0: opened
@@ -930,7 +1045,7 @@ mod engine_tests {
         let t0 = Utc::now();
         let process = MockProcessProvider::new(vec![process_snapshot(t0, &[710])]);
         let socket = MockSocketProvider::new(vec![socket_snapshot_established(t0, 710)]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Box::new(crate::tests::MockTrafficProvider::default()));
 
         engine.get_connections(710);
         let pending = engine.take_pending_events();
@@ -950,7 +1065,7 @@ mod engine_tests {
             socket_snapshot_established(t0, 720),
             socket_snapshot_established(t0, 720),
         ]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Box::new(crate::tests::MockTrafficProvider::default()));
 
         engine.get_connections(720);
         let first_pending = engine.take_pending_dns_lookups();
@@ -966,7 +1081,7 @@ mod engine_tests {
         let t0 = Utc::now();
         let process = MockProcessProvider::new(vec![process_snapshot(t0, &[730])]);
         let socket = MockSocketProvider::new(vec![socket_snapshot_established(t0, 730)]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Box::new(crate::tests::MockTrafficProvider::default()));
 
         let conn = engine.get_connections(730).data.unwrap()[0].clone();
         assert!(engine.get_hostnames(730).data.unwrap().is_empty(), "nothing resolved yet");
@@ -1010,7 +1125,7 @@ mod engine_tests {
                 status: ProviderStatus::transient_failure(t2, "still down"),
             },
         ]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Box::new(crate::tests::MockTrafficProvider::default()));
         engine.set_poll_interval_ms(1000);
 
         engine.get_connections(740); // t0: observed
@@ -1047,7 +1162,7 @@ mod engine_tests {
             status: ProviderStatus::observed(t0),
         }]);
         let socket = MockSocketProvider::new(vec![socket_snapshot_empty(t0)]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Box::new(crate::tests::MockTrafficProvider::default()));
 
         let processes = engine.get_processes();
         let info = &processes.data.unwrap()[0];
@@ -1055,6 +1170,364 @@ mod engine_tests {
         assert_eq!(
             info.executable_path, None,
             "unknown path must be None, never a silent empty string standing in for real data"
+        );
+    }
+
+    fn evidence(pid: Option<u32>, remote_addr: &str, remote_port: u16) -> CorrelationEvidence {
+        CorrelationEvidence {
+            pid,
+            protocol: Some("tcp".to_string()),
+            local_addr: None,
+            local_port: None,
+            remote_addr: Some(remote_addr.to_string()),
+            remote_port: Some(remote_port),
+            hostname: Some("example.com".to_string()),
+            timestamp: Utc::now(),
+            source: "mitmproxy-local".to_string(),
+        }
+    }
+
+    /// The Phase 0.3 "spike, independently of the UI" item: confirms the
+    /// pid/remote_addr/remote_port matching strategy actually finds the
+    /// right connection — the same tuple `socket_snapshot_established`'s
+    /// fixture connections always use (`93.184.216.34:443`).
+    #[test]
+    fn correlate_matches_by_pid_and_remote_addr_port() {
+        let t0 = Utc::now();
+        let process = MockProcessProvider::new(vec![process_snapshot(t0, &[800])]);
+        let socket = MockSocketProvider::new(vec![socket_snapshot_established(t0, 800)]);
+        let mut engine = ObservationEngine::new(
+            Box::new(process),
+            Box::new(socket),
+            Arc::new(MockDnsProvider),
+            Box::new(crate::tests::MockTrafficProvider::default()),
+        );
+        let conn = engine.get_connections(800).data.unwrap()[0].clone();
+
+        let matched = engine.correlate(&evidence(Some(800), "93.184.216.34", 443));
+        assert_eq!(matched, Some(conn.connection_id));
+    }
+
+    /// `poll_traffic_flows` end to end: drains the (mocked) traffic
+    /// provider and pairs each flow with `correlate`'s result, using a
+    /// scripted `MockTrafficProvider` rather than a real `mitmdump`
+    /// session — `real_traffic_capture_correlates_to_real_connection`
+    /// covers the real-provider path.
+    #[test]
+    fn poll_traffic_flows_pairs_each_flow_with_its_correlation() {
+        let t0 = Utc::now();
+        let process = MockProcessProvider::new(vec![process_snapshot(t0, &[810])]);
+        let socket = MockSocketProvider::new(vec![socket_snapshot_established(t0, 810)]);
+        let scripted_flow = crate::providers::CapturedFlow {
+            request: crate::models::RawHTTPRequest {
+                method: "GET".to_string(),
+                host: "93.184.216.34".to_string(),
+                path: "/".to_string(),
+                headers: std::collections::HashMap::new(),
+                body: None,
+                timestamp: t0,
+            },
+            response: None,
+            evidence: evidence(Some(810), "93.184.216.34", 443),
+        };
+        let traffic = crate::tests::MockTrafficProvider::with_flows(vec![scripted_flow]);
+        let mut engine = ObservationEngine::new(
+            Box::new(process),
+            Box::new(socket),
+            Arc::new(MockDnsProvider),
+            Box::new(traffic),
+        );
+        let conn = engine.get_connections(810).data.unwrap()[0].clone();
+
+        let polled = engine.poll_traffic_flows();
+        assert_eq!(polled.len(), 1);
+        assert_eq!(polled[0].0.request.method, "GET");
+        assert_eq!(polled[0].1, Some(conn.connection_id));
+
+        // Draining is destructive, same contract as take_pending_events.
+        assert!(engine.poll_traffic_flows().is_empty());
+    }
+
+    #[test]
+    fn correlate_no_match_for_wrong_pid() {
+        let t0 = Utc::now();
+        let process = MockProcessProvider::new(vec![process_snapshot(t0, &[801])]);
+        let socket = MockSocketProvider::new(vec![socket_snapshot_established(t0, 801)]);
+        let mut engine = ObservationEngine::new(
+            Box::new(process),
+            Box::new(socket),
+            Arc::new(MockDnsProvider),
+            Box::new(crate::tests::MockTrafficProvider::default()),
+        );
+        engine.get_connections(801);
+
+        // Same remote_addr/port, but the evidence's pid doesn't match any
+        // tracked connection for that address.
+        let matched = engine.correlate(&evidence(Some(999), "93.184.216.34", 443));
+        assert_eq!(matched, None);
+    }
+
+    #[test]
+    fn correlate_no_match_when_evidence_incomplete() {
+        let t0 = Utc::now();
+        let process = MockProcessProvider::new(vec![process_snapshot(t0, &[802])]);
+        let socket = MockSocketProvider::new(vec![socket_snapshot_established(t0, 802)]);
+        let mut engine = ObservationEngine::new(
+            Box::new(process),
+            Box::new(socket),
+            Arc::new(MockDnsProvider),
+            Box::new(crate::tests::MockTrafficProvider::default()),
+        );
+        engine.get_connections(802);
+
+        let mut no_pid = evidence(Some(802), "93.184.216.34", 443);
+        no_pid.pid = None;
+        assert_eq!(
+            engine.correlate(&no_pid),
+            None,
+            "must never guess a connection_id when pid itself is unknown"
+        );
+
+        let mut no_remote = evidence(Some(802), "93.184.216.34", 443);
+        no_remote.remote_addr = None;
+        assert_eq!(engine.correlate(&no_remote), None);
+    }
+
+    #[test]
+    fn correlate_still_matches_closed_and_expired_connections() {
+        // Not a restatement of the socket-matching rule's "prefer split
+        // over merge" policy — this asserts the opposite of what an
+        // earlier version of `correlate` assumed by analogy with that
+        // rule, and got wrong (see `correlate`'s doc comment): a traffic
+        // flow captured for a connection that has since expired or closed
+        // must still correlate to it. This is the ordinary case in
+        // practice, not an edge case — `real_traffic_capture_correlates_
+        // to_real_connection` hit exactly this with real HTTP/1.0 requests
+        // that close faster than the socket-polling interval.
+        let t0 = Utc::now();
+        let t1 = t0 + ChronoDuration::seconds(1);
+        let t2 = t0 + ChronoDuration::seconds(2);
+        let process = MockProcessProvider::new(vec![
+            process_snapshot(t0, &[803]),
+            process_snapshot(t2, &[]), // pid 803 exits -> its connection closes
+        ]);
+        let socket = MockSocketProvider::new(vec![
+            socket_snapshot_established(t0, 803),
+            socket_snapshot_empty(t1), // t1: connection expires (no exit yet)
+        ]);
+        let mut engine = ObservationEngine::new(
+            Box::new(process),
+            Box::new(socket),
+            Arc::new(MockDnsProvider),
+            Box::new(crate::tests::MockTrafficProvider::default()),
+        );
+        engine.get_processes(); // t0: running
+        engine.get_connections(803); // t0: active
+        engine.get_connections(803); // t1: expired
+
+        let matched_when_expired = engine.correlate(&evidence(Some(803), "93.184.216.34", 443));
+        assert!(
+            matched_when_expired.is_some(),
+            "an expired connection is still a valid, meaningful correlation target"
+        );
+
+        engine.get_processes(); // t2: exited -> connection closed
+        let matched_when_closed = engine.correlate(&evidence(Some(803), "93.184.216.34", 443));
+        assert_eq!(
+            matched_when_closed, matched_when_expired,
+            "a closed connection must still correlate too, to the same connection_id"
+        );
+    }
+
+    #[test]
+    fn correlate_ambiguous_match_returns_none() {
+        let t0 = Utc::now();
+        let process = MockProcessProvider::new(vec![process_snapshot(t0, &[804])]);
+        // Two simultaneous connections from the same pid to the exact same
+        // remote_addr/port (e.g. connection-pooled HTTP/2) — evidence alone
+        // can't tell them apart, so this must not guess.
+        let snapshot = crate::models::SocketSnapshot {
+            timestamp: t0,
+            observations: vec![
+                crate::models::SocketObservation {
+                    pid: 804,
+                    protocol: Protocol::Tcp,
+                    local_addr: "192.168.1.5".to_string(),
+                    local_port: 50001,
+                    remote_addr: Some("93.184.216.34".to_string()),
+                    remote_port: Some(443),
+                    state: "ESTABLISHED".to_string(),
+                    bytes_sent: None,
+                    bytes_received: None,
+                },
+                crate::models::SocketObservation {
+                    pid: 804,
+                    protocol: Protocol::Tcp,
+                    local_addr: "192.168.1.5".to_string(),
+                    local_port: 50002,
+                    remote_addr: Some("93.184.216.34".to_string()),
+                    remote_port: Some(443),
+                    state: "ESTABLISHED".to_string(),
+                    bytes_sent: None,
+                    bytes_received: None,
+                },
+            ],
+            status: ProviderStatus::observed(t0),
+        };
+        let socket = MockSocketProvider::new(vec![snapshot]);
+        let mut engine = ObservationEngine::new(
+            Box::new(process),
+            Box::new(socket),
+            Arc::new(MockDnsProvider),
+            Box::new(crate::tests::MockTrafficProvider::default()),
+        );
+        let data = engine.get_connections(804).data.unwrap();
+        assert_eq!(data.len(), 2);
+
+        let matched = engine.correlate(&evidence(Some(804), "93.184.216.34", 443));
+        assert_eq!(
+            matched, None,
+            "two equally-good candidates must be treated as no match, never a guessed connection_id"
+        );
+    }
+
+    /// Real end-to-end proof of the Phase 0.3 demo checkpoint: a real
+    /// `mitmdump` capture (via `MitmproxyTrafficProvider`, not a mock)
+    /// against a real `NetworkTestTarget` process, correctly correlated to
+    /// the `NetworkConnection` the real `SocketProvider` independently
+    /// observed for the same connection. Requires `mitmproxy` installed and
+    /// the one-time macOS approvals already granted (`docs/
+    /// PERMISSIONS_AND_PLATFORM.md`) — same environment-dependent-but-real
+    /// testing standard as `real_socket_matches_lsof`. Also verifies PID
+    /// scoping: a request from an *unrelated* process during the same
+    /// capture window must never appear (`docs/[9] TODO.md`'s "verify
+    /// traffic from unrelated processes never leaks into a session").
+    #[tokio::test]
+    async fn real_traffic_capture_correlates_to_real_connection() {
+        use std::process::{Command, Stdio};
+        use std::time::Duration;
+
+        let test_target = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("test-target")
+            .join("network_test_target.py");
+        if !test_target.exists() {
+            eprintln!("skipping: {} not found", test_target.display());
+            return;
+        }
+        if Command::new("which").arg("mitmdump").output().map(|o| !o.status.success()).unwrap_or(true) {
+            eprintln!("skipping: mitmdump not on PATH");
+            return;
+        }
+
+        // The target process under test.
+        let mut target = Command::new("python3")
+            .arg(&test_target)
+            .arg("serve")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn network_test_target.py");
+        let target_pid = target.id();
+
+        // An *unrelated* process making its own HTTP request during the
+        // same capture window — must never show up in the target's flows.
+        let mut unrelated = Command::new("python3")
+            .arg(&test_target)
+            .arg("serve")
+            // Different ports so this doesn't crash on a bind conflict
+            // with the primary target's own servers.
+            .env("NT_HTTP_PORT", "18765")
+            .env("NT_HTTPS_PORT", "18766")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn unrelated network_test_target.py");
+
+        tokio::time::sleep(Duration::from_millis(800)).await;
+
+        let process = crate::providers::SysinfoProcessProvider::new();
+        let socket = crate::providers::NetstatSocketProvider;
+        let dns = crate::providers::ReverseDnsProvider;
+        let traffic = crate::providers::MitmproxyTrafficProvider::default();
+        let mut engine = ObservationEngine::new(
+            Box::new(process),
+            Box::new(socket),
+            Arc::new(dns),
+            Box::new(traffic),
+        );
+
+        let start_status = engine.start_traffic_capture(target_pid);
+        assert_eq!(
+            start_status.state,
+            crate::models::ProviderState::Observed,
+            "capture must start cleanly: {:?}",
+            start_status.reason
+        );
+
+        // Let the addon's IPC connection establish, then observe both
+        // processes' sockets (populates NetworkConnection for correlation)
+        // while their scenario loops run several real HTTP requests each.
+        // `network_test_target.py serve` cycles through 9 scenarios at 3s
+        // apart, and `long_lived` alone sleeps 6s internally before it does
+        // anything — the `http` scenario (the first one this test can
+        // actually correlate) isn't reached until roughly 21s in, so this
+        // has to be patient, not fast.
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let mut found_match = false;
+        let mut saw_any_flow = false;
+        let mut saw_real_http_method = false;
+        for _ in 0..45 {
+            engine.get_connections(target_pid);
+            let polled = engine.poll_traffic_flows();
+            for (flow, matched) in polled {
+                saw_any_flow = true;
+                // "see the raw flow show up in a debug log" — the actual
+                // Phase 0.3 demo checkpoint wording (docs/[9] TODO.md).
+                println!(
+                    "DEBUG LOG: {} {}{} -> matched connection: {:?} (evidence: pid={:?} remote={:?}:{:?})",
+                    flow.request.method,
+                    flow.request.host,
+                    flow.request.path,
+                    matched,
+                    flow.evidence.pid,
+                    flow.evidence.remote_addr,
+                    flow.evidence.remote_port,
+                );
+                assert_eq!(
+                    flow.evidence.pid,
+                    Some(target_pid),
+                    "every captured flow must be attributed to the targeted pid only"
+                );
+                if ["GET", "POST"].contains(&flow.request.method.as_str()) {
+                    saw_real_http_method = true;
+                }
+                if matched.is_some() {
+                    found_match = true;
+                }
+            }
+            if found_match {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(700)).await;
+        }
+
+        engine.stop_traffic_capture();
+        let _ = target.kill();
+        let _ = unrelated.kill();
+        let _ = target.wait();
+        let _ = unrelated.wait();
+        // best-effort cleanup of the redirector helper this test's capture
+        // session started, mirroring the manual spike's cleanup.
+        let _ = Command::new("pkill").arg("-f").arg("Mitmproxy Redirector").status();
+
+        assert!(saw_any_flow, "expected at least one real captured HTTP flow");
+        assert!(saw_real_http_method, "captured flow's request.method must be a real HTTP verb");
+        assert!(
+            found_match,
+            "expected at least one captured flow to correlate to a real tracked NetworkConnection"
         );
     }
 }
