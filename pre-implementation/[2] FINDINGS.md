@@ -21,19 +21,20 @@ the session transcript; this is the distilled, actionable form.
 
 | ID | Severity | Status | Summary |
 |---|---|---|---|
-| [PIF-001](#pif-001--processinfo-has-no-observationstatus-list-command-envelope-undefined) | BLOCKING | Fix now | `ProcessInfo` has no `ObservationStatus`; list-command envelope undefined |
-| [PIF-002](#pif-002--no-type-holds-the-unmatched-correlation-outcome) | SHOULD-FIX-BEFORE-CODING (blocks Phase 0.3) | Fix now | No type holds the `unmatched` correlation outcome |
-| [PIF-003](#pif-003--observationstate-enum-never-given-a-rustserde-spelling) | SHOULD-FIX-BEFORE-CODING | Fix now | `ObservationState` enum never given a Rust/serde spelling |
-| [PIF-004](#pif-004--body-preview-size-limit-needed-in-phase-04-defined-in-phase-06) | SHOULD-FIX-BEFORE-CODING (blocks Phase 0.4) | Fix now (definition only) | body-preview size limit needed in Phase 0.4, defined in Phase 0.6 |
-| [PIF-005](#pif-005--connection-matching-algorithm-underspecified) | SHOULD-FIX-BEFORE-CODING (Phase 0.1, load-bearing) | Fix now | Connection-matching algorithm underspecified |
-| [PIF-006](#pif-006--staleness-threshold-formula-undefined-stale-unreachable-in-phase-01) | WORTH-NOTING (Round 2: BLOCKING) | Fix now | Staleness threshold formula undefined; `stale` unreachable in Phase 0.1 |
+| [PIF-001](#pif-001--processinfo-has-no-observationstatus-list-command-envelope-undefined) | BLOCKING | Fixed | `ProcessInfo` has no `ObservationStatus`; list-command envelope undefined |
+| [PIF-002](#pif-002--no-type-holds-the-unmatched-correlation-outcome) | SHOULD-FIX-BEFORE-CODING (blocks Phase 0.3) | Fixed | No type holds the `unmatched` correlation outcome |
+| [PIF-003](#pif-003--observationstate-enum-never-given-a-rustserde-spelling) | SHOULD-FIX-BEFORE-CODING | Fixed | `ObservationState` enum never given a Rust/serde spelling |
+| [PIF-004](#pif-004--body-preview-size-limit-needed-in-phase-04-defined-in-phase-06) | SHOULD-FIX-BEFORE-CODING (blocks Phase 0.4) | Fixed (definition only) | body-preview size limit needed in Phase 0.4, defined in Phase 0.6 |
+| [PIF-005](#pif-005--connection-matching-algorithm-underspecified) | SHOULD-FIX-BEFORE-CODING (Phase 0.1, load-bearing) | Fixed | Connection-matching algorithm underspecified |
+| [PIF-006](#pif-006--staleness-threshold-formula-undefined-stale-unreachable-in-phase-01) | WORTH-NOTING (Round 2: BLOCKING) | Fixed | Staleness threshold formula undefined; `stale` unreachable in Phase 0.1 |
 
-**Step B decisions recorded 2026-09-07** — see each entry below for reasoning. 36 of
-37 combined findings (Round 1 + Round 2) are `Fix now`; one (PIF-016) is `Deferred`.
-Nothing came back `Not an issue` — every finding was independently confirmed against
-the actual doc text while deciding. See `[3] TODO.md` step B note on the two severity
-disagreements (PIF-002, PIF-006) between Round 1 and Round 2, both resolved here as
-`Fix now` regardless of exactly which severity label applies.
+**Step B decisions recorded 2026-09-07; step C applied 2026-09-07 in commit
+`fc4ec5e`** — see each entry below for reasoning. 36 of 37 combined findings
+(Round 1 + Round 2) are `Fixed`; one (PIF-016) is `Deferred`. Nothing came back
+`Not an issue` — every finding was independently confirmed against the actual doc
+text while deciding. See `[3] TODO.md` step B note on the two severity disagreements
+(PIF-002, PIF-006) between Round 1 and Round 2, both resolved as fix-now regardless
+of exactly which severity label applies.
 
 ---
 
@@ -41,7 +42,7 @@ disagreements (PIF-002, PIF-006) between Round 1 and Round 2, both resolved here
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: BLOCKING per Round 1's own severity, confirmed independently by Round 2 (which also nailed the envelope shape — see cross-check below); `TODO.md` Phase 0.1's demo checkpoint is unimplementable without this. Cheap doc edit, no reason to defer. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: BLOCKING per Round 1's own severity, confirmed independently by Round 2 (which also nailed the envelope shape — see cross-check below); `TODO.md` Phase 0.1's demo checkpoint is unimplementable without this. Cheap doc edit, no reason to defer. |
 | **Severity** | BLOCKING |
 | **Location** | `docs/[4] DATA_MODEL.md` (`ProcessInfo` table) vs. `docs/[3] ARCHITECTURE.md` ("Error propagation") vs. `docs/[5] OBSERVATION_CONTRACT.md` ("Applied per layer") |
 
@@ -90,7 +91,7 @@ stronger signal in step B, not a duplicate.
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: doesn't block Phase 0.1 (confirmed — `HTTPRequest` isn't touched until Phase 0.3/0.4), but Round 2 showed the current `HTTPRequest.connection_id: String` (required) actively forbids constructing the unmatched case, not just "lacks a status field" — worth closing now, cheap, while `DATA_MODEL.md` is already open in this pass. Not escalating the recorded severity to Round 2's BLOCKING since it genuinely isn't Phase-0.1-blocking, but treating it with the same urgency by fixing now anyway. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: doesn't block Phase 0.1 (confirmed — `HTTPRequest` isn't touched until Phase 0.3/0.4), but Round 2 showed the current `HTTPRequest.connection_id: String` (required) actively forbids constructing the unmatched case, not just "lacks a status field" — worth closing now, cheap, while `DATA_MODEL.md` is already open in this pass. Not escalating the recorded severity to Round 2's BLOCKING since it genuinely isn't Phase-0.1-blocking, but treating it with the same urgency by fixing now anyway. |
 | **Severity** | SHOULD-FIX-BEFORE-CODING (blocks Phase 0.3, not Phase 0.1) |
 | **Location** | `docs/[4] DATA_MODEL.md` (`TrafficEvent`, `CorrelationEvidence`) vs. `docs/[8] TESTING_STRATEGY.md` (mandatory test 3) |
 
@@ -129,7 +130,7 @@ retain what an unmatched request was scored against. Flag the severity mismatch
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: one-line addition; every Phase 0.1 type crossing the IPC boundary depends on the convention being stated once. Bundling `lifecycle_state`'s identical gap in (Round 2 cross-check) rather than writing two near-duplicate notes. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: one-line addition; every Phase 0.1 type crossing the IPC boundary depends on the convention being stated once. Bundling `lifecycle_state`'s identical gap in (Round 2 cross-check) rather than writing two near-duplicate notes. |
 | **Severity** | SHOULD-FIX-BEFORE-CODING |
 | **Location** | `docs/[4] DATA_MODEL.md` / `docs/[5] OBSERVATION_CONTRACT.md` |
 
@@ -165,7 +166,7 @@ the same one-line fix rather than just `ObservationState`.
 
 | | |
 |---|---|
-| **Status** | Fix now, definition only — decided 2026-09-07. Reason: only the numeric *definition* moves earlier (into `PRIVACY_AND_SECURITY.md`/`DATA_MODEL.md`, referenced by Phase 0.4); the full memory-budget/eviction-policy work explicitly stays in Phase 0.6, which already has its own TODO items for that. No conflict between "fix now" and "Phase 0.6 still does the rest." |
+| **Status** | Fixed, definition only — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: only the numeric *definition* moves earlier (into `PRIVACY_AND_SECURITY.md`/`DATA_MODEL.md`, referenced by Phase 0.4); the full memory-budget/eviction-policy work explicitly stays in Phase 0.6, which already has its own TODO items for that. No conflict between "fix now" and "Phase 0.6 still does the rest." |
 | **Severity** | SHOULD-FIX-BEFORE-CODING (blocks Phase 0.4, not Phase 0.1) |
 | **Location** | `docs/[9] TODO.md` (Phase 0.4 vs. Phase 0.6) / `docs/[4] DATA_MODEL.md` (`body_preview`) / `docs/[6] PRIVACY_AND_SECURITY.md` |
 
@@ -194,7 +195,7 @@ note Phase 0.4 uses a provisional constant revisited in 0.6.
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: load-bearing for the very first Engine logic written in Phase 0.1 (ADR-001's core differentiator); Round 2 independently confirmed the circular citation and supplied a concrete, adoptable algorithm (see cross-check below) — using it near-verbatim rather than re-deriving one. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: load-bearing for the very first Engine logic written in Phase 0.1 (ADR-001's core differentiator); Round 2 independently confirmed the circular citation and supplied a concrete, adoptable algorithm (see cross-check below) — using it near-verbatim rather than re-deriving one. |
 | **Severity** | SHOULD-FIX-BEFORE-CODING (Phase 0.1, load-bearing) |
 | **Location** | `docs/[4] DATA_MODEL.md` / `docs/[2] DECISIONS.md` ADR-006, ADR-012 / `docs/[9] TODO.md` Phase 0.1 |
 
@@ -238,7 +239,7 @@ an exact match." Worth adopting close to verbatim in step C.
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: siding with Round 2's escalation to BLOCKING — Phase 0.1's *required* frontend state list includes `stale`, so "unreachable, harmless" (Round 1's read) undersells it; also unblocks PIF-023's frontend state-model rewrite, which needs a real formula to reference. One paragraph, cheap. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: siding with Round 2's escalation to BLOCKING — Phase 0.1's *required* frontend state list includes `stale`, so "unreachable, harmless" (Round 1's read) undersells it; also unblocks PIF-023's frontend state-model rewrite, which needs a real formula to reference. One paragraph, cheap. |
 | **Severity** | WORTH-NOTING |
 | **Location** | `docs/[5] OBSERVATION_CONTRACT.md` (`stale`) / `docs/[9] TODO.md` Phase 0.1 frontend state list / Phase 0.2 |
 
@@ -300,37 +301,37 @@ PIF-006: WORTH-NOTING → BLOCKING) — flagged for step B. Everything below is 
 
 | ID | Severity | Status | Summary |
 |---|---|---|---|
-| [PIF-007](#pif-007--no-provider-side-status-type-exists) | BLOCKING | Fix now | No provider-side status type exists; every Phase 0.1 provider trait is unwritable as specified |
-| [PIF-008](#pif-008--transient_failure-status-pathway-is-unimplementable-end-to-end) | BLOCKING | Fix now | `transient_failure` status pathway is unimplementable end-to-end |
-| [PIF-009](#pif-009--hostnameobservation-provider-owned-type-requires-an-engine-owned-connection_id) | BLOCKING | Fix now | `HostnameObservation` (provider-owned) requires an Engine-owned `connection_id` |
-| [PIF-010](#pif-010--trafficeventrequest_idresponse_id-reference-fields-that-dont-exist) | BLOCKING | Fix now | `TrafficEvent.request_id`/`response_id` reference fields that don't exist |
-| [PIF-011](#pif-011--trafficeventtype-has-no-connectionexpired-variant) | SHOULD-FIX | Fix now | `TrafficEvent.type` has no `ConnectionExpired` variant |
-| [PIF-012](#pif-012--flow-defined-immediately-per-adr-004-vs-not-defined-until-phase-05-per-todomd) | SHOULD-FIX | Fix now | `Flow` "defined immediately" per ADR-004 vs. not defined until Phase 0.5 per `TODO.md` |
-| [PIF-013](#pif-013--report-status-vocabulary-drift-six-of-seven-listed) | WORTH-NOTING | Fix now | Report status vocabulary drift (six of seven listed) |
-| [PIF-014](#pif-014--trafficevent-table-formattingconnection_id-note-self-contradiction) | WORTH-NOTING | Fix now | `TrafficEvent` table formatting/`connection_id` note self-contradiction |
-| [PIF-015](#pif-015--observationcapabilities-panel-vocabulary-mismatch-across-three-docs) | WORTH-NOTING | Fix now | `ObservationCapabilities` panel vocabulary mismatch across three docs |
+| [PIF-007](#pif-007--no-provider-side-status-type-exists) | BLOCKING | Fixed | No provider-side status type exists; every Phase 0.1 provider trait is unwritable as specified |
+| [PIF-008](#pif-008--transient_failure-status-pathway-is-unimplementable-end-to-end) | BLOCKING | Fixed | `transient_failure` status pathway is unimplementable end-to-end |
+| [PIF-009](#pif-009--hostnameobservation-provider-owned-type-requires-an-engine-owned-connection_id) | BLOCKING | Fixed | `HostnameObservation` (provider-owned) requires an Engine-owned `connection_id` |
+| [PIF-010](#pif-010--trafficeventrequest_idresponse_id-reference-fields-that-dont-exist) | BLOCKING | Fixed | `TrafficEvent.request_id`/`response_id` reference fields that don't exist |
+| [PIF-011](#pif-011--trafficeventtype-has-no-connectionexpired-variant) | SHOULD-FIX | Fixed | `TrafficEvent.type` has no `ConnectionExpired` variant |
+| [PIF-012](#pif-012--flow-defined-immediately-per-adr-004-vs-not-defined-until-phase-05-per-todomd) | SHOULD-FIX | Fixed | `Flow` "defined immediately" per ADR-004 vs. not defined until Phase 0.5 per `TODO.md` |
+| [PIF-013](#pif-013--report-status-vocabulary-drift-six-of-seven-listed) | WORTH-NOTING | Fixed | Report status vocabulary drift (six of seven listed) |
+| [PIF-014](#pif-014--trafficevent-table-formattingconnection_id-note-self-contradiction) | WORTH-NOTING | Fixed | `TrafficEvent` table formatting/`connection_id` note self-contradiction |
+| [PIF-015](#pif-015--observationcapabilities-panel-vocabulary-mismatch-across-three-docs) | WORTH-NOTING | Fixed | `ObservationCapabilities` panel vocabulary mismatch across three docs |
 | [PIF-016](#pif-016--doc-cross-references-missing-the-n--filename-prefix) | WORTH-NOTING | Deferred (Phase 0, standalone commit) | Doc cross-references missing the `[N] ` filename prefix |
-| [PIF-017](#pif-017--redactor-constructionownership-ambiguity-vs-engine-only-constructs-domain-state-rule) | SHOULD-FIX | Fix now | Redactor construction/ownership ambiguity vs. "Engine only constructs domain state" rule |
-| [PIF-018](#pif-018--capture-time-redaction-boundary-rust-core-vs-python-mitmproxy-addon-undefined) | SHOULD-FIX | Fix now | Capture-time redaction boundary (Rust core vs. Python mitmproxy addon) undefined |
-| [PIF-019](#pif-019--absence-for-expired-not-qualified-as-absence-from-a-successful-snapshot) | SHOULD-FIX | Fix now | "Absence" for `expired` not qualified as absence from a *successful* snapshot |
-| [PIF-020](#pif-020--discovered--active-transition-never-defined) | SHOULD-FIX | Fix now | `discovered` → `active` transition never defined |
-| [PIF-021](#pif-021--field-level-absence-best-effortprovider-dependent-fields-not-covered-by-the-no-inference-rule) | SHOULD-FIX | Fix now | Field-level absence (best-effort/provider-dependent fields) not covered by the no-inference rule |
-| [PIF-022](#pif-022--processinfo-has-no-connection-count-field-but-the-ui-and-todomd-require-one) | SHOULD-FIX | Fix now | `ProcessInfo` has no connection-count field, but the UI and `TODO.md` require one |
-| [PIF-023](#pif-023--frontend-shared-view-state-model-doesnt-map-onto-the-seven-value-status-vocabulary) | SHOULD-FIX | Fix now | Frontend shared view-state model doesn't map onto the seven-value status vocabulary |
-| [PIF-024](#pif-024--last_successful_at-defined-as-set-only-when-stale-contradicts-always-needed-for-ui) | SHOULD-FIX | Fix now | `last_successful_at` defined as "set only when `stale`," contradicts always-needed-for-UI |
-| [PIF-025](#pif-025--sensitive-field-starter-list-undefined-for-the-redactor) | SHOULD-FIX | Fix now (doc list only) | Sensitive-field starter list undefined for the Redactor |
-| [PIF-026](#pif-026--hostnameobservation-confidence-values-per-source--multi-source-display-rule-undefined) | SHOULD-FIX | Fix now | `HostnameObservation` confidence values per source + multi-source display rule undefined |
-| [PIF-027](#pif-027--observationstatusreasonprovider-schema-free-provider-should-arguably-be-an-enum) | WORTH-NOTING | Fix now | `ObservationStatus.reason`/`provider` schema-free; `provider` should arguably be an enum |
-| [PIF-028](#pif-028--phase-0-permissions-spike-scoped-too-narrowly) | BLOCKING | Fix now | Phase 0 permissions spike scoped too narrowly (privilege only, not data-shape questions) |
-| [PIF-029](#pif-029--macos-tcchardened-runtime-not-addressed-in-permissions_and_platformmd) | SHOULD-FIX | Fix now | macOS TCC/hardened runtime not addressed in `PERMISSIONS_AND_PLATFORM.md` |
-| [PIF-030](#pif-030--no-documented-contingency-for-a-negative-phase-0-spike-result) | SHOULD-FIX | Fix now | No documented contingency for a negative Phase 0 spike result |
-| [PIF-031](#pif-031--apple-developer-program-membership-assumed-untagged) | WORTH-NOTING | Fix now | Apple Developer Program membership assumed, untagged |
-| [PIF-032](#pif-032--exited-process--connection-lifecycle-and-retention-in-output-undefined-for-mandatory-test-1) | SHOULD-FIX | Fix now | Exited-process → connection lifecycle and retention-in-output undefined for mandatory test 1 |
-| [PIF-033](#pif-033--redacted-field-marker--show-anywayreveal-command-undefined) | SHOULD-FIX | Fix now | Redacted-field marker + "show anyway"/reveal command undefined |
-| [PIF-034](#pif-034--observationcapabilities-phase-assignment-conflict--per-connection-vs-per-provider-ownership) | SHOULD-FIX | Fix now | `ObservationCapabilities` phase assignment conflict + per-connection vs. per-provider ownership |
-| [PIF-035](#pif-035--architecturemd-marked-frozen-for-phase-01-while-still-containing-the-above-gaps) | SHOULD-FIX | Fix now | `ARCHITECTURE.md` marked frozen for Phase 0.1 while still containing the above gaps |
-| [PIF-036](#pif-036--capture-mechanism-in-path-tls-terminating-proxy--ca-install-not-reconciled-with-read-only-framing) | SHOULD-FIX | Fix now | Capture mechanism (in-path TLS-terminating proxy + CA install) not reconciled with "read-only" framing |
-| [PIF-037](#pif-037--phase-2-nefilterdataprovider-read-only-constraint-not-restated) | WORTH-NOTING | Fix now | Phase 2 `NEFilterDataProvider` read-only constraint not restated |
+| [PIF-017](#pif-017--redactor-constructionownership-ambiguity-vs-engine-only-constructs-domain-state-rule) | SHOULD-FIX | Fixed | Redactor construction/ownership ambiguity vs. "Engine only constructs domain state" rule |
+| [PIF-018](#pif-018--capture-time-redaction-boundary-rust-core-vs-python-mitmproxy-addon-undefined) | SHOULD-FIX | Fixed | Capture-time redaction boundary (Rust core vs. Python mitmproxy addon) undefined |
+| [PIF-019](#pif-019--absence-for-expired-not-qualified-as-absence-from-a-successful-snapshot) | SHOULD-FIX | Fixed | "Absence" for `expired` not qualified as absence from a *successful* snapshot |
+| [PIF-020](#pif-020--discovered--active-transition-never-defined) | SHOULD-FIX | Fixed | `discovered` → `active` transition never defined |
+| [PIF-021](#pif-021--field-level-absence-best-effortprovider-dependent-fields-not-covered-by-the-no-inference-rule) | SHOULD-FIX | Fixed | Field-level absence (best-effort/provider-dependent fields) not covered by the no-inference rule |
+| [PIF-022](#pif-022--processinfo-has-no-connection-count-field-but-the-ui-and-todomd-require-one) | SHOULD-FIX | Fixed | `ProcessInfo` has no connection-count field, but the UI and `TODO.md` require one |
+| [PIF-023](#pif-023--frontend-shared-view-state-model-doesnt-map-onto-the-seven-value-status-vocabulary) | SHOULD-FIX | Fixed | Frontend shared view-state model doesn't map onto the seven-value status vocabulary |
+| [PIF-024](#pif-024--last_successful_at-defined-as-set-only-when-stale-contradicts-always-needed-for-ui) | SHOULD-FIX | Fixed | `last_successful_at` defined as "set only when `stale`," contradicts always-needed-for-UI |
+| [PIF-025](#pif-025--sensitive-field-starter-list-undefined-for-the-redactor) | SHOULD-FIX | Fixed (doc list only) | Sensitive-field starter list undefined for the Redactor |
+| [PIF-026](#pif-026--hostnameobservation-confidence-values-per-source--multi-source-display-rule-undefined) | SHOULD-FIX | Fixed | `HostnameObservation` confidence values per source + multi-source display rule undefined |
+| [PIF-027](#pif-027--observationstatusreasonprovider-schema-free-provider-should-arguably-be-an-enum) | WORTH-NOTING | Fixed | `ObservationStatus.reason`/`provider` schema-free; `provider` should arguably be an enum |
+| [PIF-028](#pif-028--phase-0-permissions-spike-scoped-too-narrowly) | BLOCKING | Fixed | Phase 0 permissions spike scoped too narrowly (privilege only, not data-shape questions) |
+| [PIF-029](#pif-029--macos-tcchardened-runtime-not-addressed-in-permissions_and_platformmd) | SHOULD-FIX | Fixed | macOS TCC/hardened runtime not addressed in `PERMISSIONS_AND_PLATFORM.md` |
+| [PIF-030](#pif-030--no-documented-contingency-for-a-negative-phase-0-spike-result) | SHOULD-FIX | Fixed | No documented contingency for a negative Phase 0 spike result |
+| [PIF-031](#pif-031--apple-developer-program-membership-assumed-untagged) | WORTH-NOTING | Fixed | Apple Developer Program membership assumed, untagged |
+| [PIF-032](#pif-032--exited-process--connection-lifecycle-and-retention-in-output-undefined-for-mandatory-test-1) | SHOULD-FIX | Fixed | Exited-process → connection lifecycle and retention-in-output undefined for mandatory test 1 |
+| [PIF-033](#pif-033--redacted-field-marker--show-anywayreveal-command-undefined) | SHOULD-FIX | Fixed | Redacted-field marker + "show anyway"/reveal command undefined |
+| [PIF-034](#pif-034--observationcapabilities-phase-assignment-conflict--per-connection-vs-per-provider-ownership) | SHOULD-FIX | Fixed | `ObservationCapabilities` phase assignment conflict + per-connection vs. per-provider ownership |
+| [PIF-035](#pif-035--architecturemd-marked-frozen-for-phase-01-while-still-containing-the-above-gaps) | SHOULD-FIX | Fixed | `ARCHITECTURE.md` marked frozen for Phase 0.1 while still containing the above gaps |
+| [PIF-036](#pif-036--capture-mechanism-in-path-tls-terminating-proxy--ca-install-not-reconciled-with-read-only-framing) | SHOULD-FIX | Fixed | Capture mechanism (in-path TLS-terminating proxy + CA install) not reconciled with "read-only" framing |
+| [PIF-037](#pif-037--phase-2-nefilterdataprovider-read-only-constraint-not-restated) | WORTH-NOTING | Fixed | Phase 2 `NEFilterDataProvider` read-only constraint not restated |
 
 ---
 
@@ -338,7 +339,7 @@ PIF-006: WORTH-NOTING → BLOCKING) — flagged for step B. Everything below is 
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: blocks the first Rust trait signature written in Phase 0.1; without this, Phase 0.1 cannot start as specified. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: blocks the first Rust trait signature written in Phase 0.1; without this, Phase 0.1 cannot start as specified. |
 | **Severity** | BLOCKING |
 | **Location** | `docs/[4] DATA_MODEL.md` (`ObservationStatus`) vs. `docs/[3] ARCHITECTURE.md` (Providers) vs. `docs/[5] OBSERVATION_CONTRACT.md` ("Two different kinds of status") vs. `docs/[9] TODO.md` Phase 0.1 |
 
@@ -372,7 +373,7 @@ constructs `ObservationStatus` by wrapping a `ProviderStatus` and may additional
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: blocks mandatory test 4, the specific test ADR-012 added to catch the "every connection just disappeared" bug; the contract's literal current text would cause that exact bug. Not deferrable past Phase 0.1. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: blocks mandatory test 4, the specific test ADR-012 added to catch the "every connection just disappeared" bug; the contract's literal current text would cause that exact bug. Not deferrable past Phase 0.1. |
 | **Severity** | BLOCKING |
 | **Location** | `docs/[4] DATA_MODEL.md` (`SocketSnapshot`) vs. `docs/[5] OBSERVATION_CONTRACT.md` (lines ~34 and ~79, "Applied per layer") vs. `docs/[8] TESTING_STRATEGY.md` (mandatory test 4) |
 
@@ -418,7 +419,7 @@ timestamp.
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: doesn't block Phase 0.1 (DNS lands Phase 0.2), but this is the identical provider/Engine-construction contradiction ADR-011 and ADR-012 already paid down for sockets and processes — closing it a third time now, while the pattern and the fix are both well-established, is strictly cheaper than a third rediscovery mid-Phase-0.2. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: doesn't block Phase 0.1 (DNS lands Phase 0.2), but this is the identical provider/Engine-construction contradiction ADR-011 and ADR-012 already paid down for sockets and processes — closing it a third time now, while the pattern and the fix are both well-established, is strictly cheaper than a third rediscovery mid-Phase-0.2. |
 | **Severity** | BLOCKING |
 | **Location** | `docs/[4] DATA_MODEL.md` (`HostnameObservation`) vs. "The core rule this document enforces" vs. `docs/[9] TODO.md` Phase 0.2 |
 
@@ -450,7 +451,7 @@ split names.
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: two required-field additions; blocks Phase 0.2's `TrafficEvent` emission and is persisted from Phase 0.6 onward, so the earlier it lands the fewer places it has to be retrofitted. Also corrects ADR-012's overstatement that this was already fixed. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: two required-field additions; blocks Phase 0.2's `TrafficEvent` emission and is persisted from Phase 0.6 onward, so the earlier it lands the fewer places it has to be retrofitted. Also corrects ADR-012's overstatement that this was already fixed. |
 | **Severity** | BLOCKING |
 | **Location** | `docs/[4] DATA_MODEL.md` (`TrafficEvent`, `HTTPRequest`, `HTTPResponse`) vs. `docs/[2] DECISIONS.md` ADR-012 |
 
@@ -481,7 +482,7 @@ Engine-assigned, like `connection_id`.
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: one enum variant; without it Phase 0.2's timeline can only show connections opening, never ending, or an implementer reintroduces the exact `ConnectionClosed`-for-expiry overclaim ADR-011/012 removed. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: one enum variant; without it Phase 0.2's timeline can only show connections opening, never ending, or an implementer reintroduces the exact `ConnectionClosed`-for-expiry overclaim ADR-011/012 removed. |
 | **Severity** | SHOULD-FIX-BEFORE-CODING |
 | **Location** | `docs/[4] DATA_MODEL.md` (`TrafficEvent`, "closed vs. expired" rule) vs. `docs/[9] TODO.md` Phase 0.2 |
 
@@ -513,7 +514,7 @@ to "connection-opened / connection-closed / connection-expired."
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: `TODO.md` just needs to catch up to ADR-004's already-made decision — add the Phase 0.1 "define, don't wire in" bullet and reword Phase 0.5's. Prevents Phase 0.4's HTTP wiring from calcifying onto `NetworkConnection` directly, which is exactly the outcome ADR-004 exists to avoid. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: `TODO.md` just needs to catch up to ADR-004's already-made decision — add the Phase 0.1 "define, don't wire in" bullet and reword Phase 0.5's. Prevents Phase 0.4's HTTP wiring from calcifying onto `NetworkConnection` directly, which is exactly the outcome ADR-004 exists to avoid. |
 | **Severity** | SHOULD-FIX-BEFORE-CODING |
 | **Location** | `docs/[2] DECISIONS.md` ADR-004 vs. `docs/[4] DATA_MODEL.md` (`Flow`) vs. `docs/[9] TODO.md` Phase 0.5 vs. `docs/[8] TESTING_STRATEGY.md` (integration tests) |
 
@@ -545,7 +546,7 @@ attached to the right `NetworkConnection` (via `Flow` from Phase 0.5 onward).
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: trivial, no reason to leave open. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: trivial, no reason to leave open. |
 | **Severity** | WORTH-NOTING |
 | **Location** | `docs/[1] process-network-inspector-report.md` vs. `docs/[5] OBSERVATION_CONTRACT.md` |
 
@@ -566,7 +567,7 @@ pointer to `OBSERVATION_CONTRACT.md` so it can't drift again.
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: trivial, bundled with the other `TrafficEvent` edits (PIF-010, PIF-011) already touching this table in the same pass. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: trivial, bundled with the other `TrafficEvent` edits (PIF-010, PIF-011) already touching this table in the same pass. |
 | **Severity** | WORTH-NOTING |
 | **Location** | `docs/[4] DATA_MODEL.md` (`TrafficEvent`) |
 
@@ -588,7 +589,7 @@ event type except traffic that is `unmatched`."
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: doesn't block anything before Phase 0.3/1.0 (the panel isn't implemented until then), but it's a cheap table edit and `DATA_MODEL.md` is already open for `ObservationCapabilities`-adjacent edits (PIF-034) in this same pass. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: doesn't block anything before Phase 0.3/1.0 (the panel isn't implemented until then), but it's a cheap table edit and `DATA_MODEL.md` is already open for `ObservationCapabilities`-adjacent edits (PIF-034) in this same pass. |
 | **Severity** | WORTH-NOTING |
 | **Location** | `docs/[1] process-network-inspector-report.md` ("Observation Capabilities panel") vs. `docs/[4] DATA_MODEL.md` (`ObservationCapabilities`) vs. `docs/[9] TODO.md` Phase 0.3 |
 
@@ -631,7 +632,7 @@ Either drop the numeric prefixes from filenames (keep ordering via
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: one-sentence amendment to `ARCHITECTURE.md`; needed before that document's Phase 0.1 freeze can honestly be stamped (see PIF-035), and it's exactly the kind of rule ADR-012 consolidated specifically to make checkable in code review. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: one-sentence amendment to `ARCHITECTURE.md`; needed before that document's Phase 0.1 freeze can honestly be stamped (see PIF-035), and it's exactly the kind of rule ADR-012 consolidated specifically to make checkable in code review. |
 | **Severity** | SHOULD-FIX-BEFORE-CODING |
 | **Location** | `docs/[3] ARCHITECTURE.md` (dependency rules; Redactor) vs. `docs/[9] TODO.md` Phase 0.4 |
 
@@ -662,7 +663,7 @@ only because they sit at specific checkpoints, not because they're separate laye
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: doesn't block Phase 0.1, but this sits directly on the path that decides whether a credential ever crosses a process boundary in retrievable form — worth pinning down while the design is still just prose, not an already-built IPC schema. Adopting Round 2's proposed approach (redact in the addon, before the IPC socket; one shared field-name list read by both processes) since it's consistent with the IPC design already planned (local socket + JSON via `serde`) and requires no new mechanism. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: doesn't block Phase 0.1, but this sits directly on the path that decides whether a credential ever crosses a process boundary in retrievable form — worth pinning down while the design is still just prose, not an already-built IPC schema. Adopting Round 2's proposed approach (redact in the addon, before the IPC socket; one shared field-name list read by both processes) since it's consistent with the IPC design already planned (local socket + JSON via `serde`) and requires no new mechanism. |
 | **Severity** | SHOULD-FIX-BEFORE-CODING |
 | **Location** | `docs/[6] PRIVACY_AND_SECURITY.md` ("The two redaction checkpoints") vs. `docs/[3] ARCHITECTURE.md` (Redactor in Rust core) vs. `docs/[9] TODO.md` Phase 0.3/0.4 |
 
@@ -696,7 +697,7 @@ unredacted tier-1 value.
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: directly gates mandatory tests 2 and 4, both Phase 0.1/cross-cutting; getting this wrong reproduces the exact bugs those two tests exist to catch. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: directly gates mandatory tests 2 and 4, both Phase 0.1/cross-cutting; getting this wrong reproduces the exact bugs those two tests exist to catch. |
 | **Severity** | SHOULD-FIX-BEFORE-CODING |
 | **Location** | `docs/[4] DATA_MODEL.md` ("closed vs. expired" rule) vs. `docs/[8] TESTING_STRATEGY.md` (mandatory tests 2 and 4) |
 
@@ -727,7 +728,7 @@ and `last_seen` unchanged and updates only `status`.
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: these are the two lifecycle states a Phase 0.1 connection actually spends its life in (per PIF-019/the `closed`/`expired` rule, `closed` is rare-to-unreachable and `expired` is terminal) — Phase 0.1 cannot render the connection table correctly without this. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: these are the two lifecycle states a Phase 0.1 connection actually spends its life in (per PIF-019/the `closed`/`expired` rule, `closed` is rare-to-unreachable and `expired` is terminal) — Phase 0.1 cannot render the connection table correctly without this. |
 | **Severity** | SHOULD-FIX-BEFORE-CODING |
 | **Location** | `docs/[4] DATA_MODEL.md` (`NetworkConnection.lifecycle_state`) vs. `docs/[9] TODO.md` |
 
@@ -757,7 +758,7 @@ observed once with socket state `ESTABLISHED`; `LISTEN` sockets follow the same 
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: Phase 0.1's socket table renders `bytes_sent`/`bytes_received` today; without this rule the frontend is left to invent its own convention for `None`, which is exactly the kind of drift `OBSERVATION_CONTRACT.md`'s "one rule" section exists to prevent. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: Phase 0.1's socket table renders `bytes_sent`/`bytes_received` today; without this rule the frontend is left to invent its own convention for `None`, which is exactly the kind of drift `OBSERVATION_CONTRACT.md`'s "one rule" section exists to prevent. |
 | **Severity** | SHOULD-FIX-BEFORE-CODING |
 | **Location** | `docs/[4] DATA_MODEL.md` (`bytes_sent`/`bytes_received`, `cpu_percent`, `memory_bytes`, marked best-effort) vs. `docs/[5] OBSERVATION_CONTRACT.md` ("the one rule this document exists to enforce") |
 
@@ -788,7 +789,7 @@ Name the governed fields explicitly.
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: the process list is Phase 0.1's first screen; this also settles a real architectural question (whether `get_processes` depends on `SocketProvider`) that's cheaper to answer in a doc than discover while implementing the command. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: the process list is Phase 0.1's first screen; this also settles a real architectural question (whether `get_processes` depends on `SocketProvider`) that's cheaper to answer in a doc than discover while implementing the command. |
 | **Severity** | SHOULD-FIX-BEFORE-CODING |
 | **Location** | `docs/[4] DATA_MODEL.md` (`ProcessInfo`) vs. `docs/[1] process-network-inspector-report.md` §3 vs. `docs/[9] TODO.md` Phase 0.1 |
 
@@ -818,7 +819,7 @@ Update `TODO.md` Phase 0.1's frontend bullet to name the field.
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: this model is imported by every Phase 0.1 React view; this is precisely the "cheap now, expensive after the process list/connections table/badge component are built" case this whole pre-implementation pass exists to catch. Depends on PIF-006's staleness formula (also fixed now) to be fully concrete. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: this model is imported by every Phase 0.1 React view; this is precisely the "cheap now, expensive after the process list/connections table/badge component are built" case this whole pre-implementation pass exists to catch. Depends on PIF-006's staleness formula (also fixed now) to be fully concrete. |
 | **Severity** | SHOULD-FIX-BEFORE-CODING |
 | **Location** | `docs/[9] TODO.md` Phase 0.1 (shared state model: `loading`/`loaded`/`empty`/`permission_denied`/`error`/`stale`) vs. `docs/[5] OBSERVATION_CONTRACT.md` vs. `docs/[8] TESTING_STRATEGY.md` (frontend tests) |
 
@@ -850,7 +851,7 @@ status. No `error` state — transport failures render as `unavailable`.
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: one-word contradiction in a Phase 0.1 type (`ObservationStatus`); as written it silently breaks Phase 0.2's "last updated" UI requirement. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: one-word contradiction in a Phase 0.1 type (`ObservationStatus`); as written it silently breaks Phase 0.2's "last updated" UI requirement. |
 | **Severity** | SHOULD-FIX-BEFORE-CODING |
 | **Location** | `docs/[4] DATA_MODEL.md` (`ObservationStatus.last_successful_at`) vs. `docs/[9] TODO.md` Phase 0.2 |
 
@@ -873,7 +874,7 @@ and the `stale` threshold computation."
 
 | | |
 |---|---|
-| **Status** | Fix now, doc list only — decided 2026-09-07. Reason: doesn't block Phase 0.1 (Redactor lands Phase 0.4), but on the tier where both a miss and a false positive are unrecoverable, "start from a blank list" is worth closing while it's just a doc edit rather than a decision made under implementation pressure. Only the list moves earlier; building the actual `Redactor` still happens in Phase 0.4. |
+| **Status** | Fixed, doc list only — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: doesn't block Phase 0.1 (Redactor lands Phase 0.4), but on the tier where both a miss and a false positive are unrecoverable, "start from a blank list" is worth closing while it's just a doc edit rather than a decision made under implementation pressure. Only the list moves earlier; building the actual `Redactor` still happens in Phase 0.4. |
 | **Severity** | SHOULD-FIX-BEFORE-CODING |
 | **Location** | `docs/[6] PRIVACY_AND_SECURITY.md` (data classification: "any field name") vs. `docs/[9] TODO.md` Phase 0.4 (Redactor, "configurable list") |
 
@@ -904,7 +905,7 @@ bullet at this list.
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: doesn't block Phase 0.1 (DNS lands Phase 0.2), but it's user-visible display behavior built once — cheap to pin the starter values and the display rule now rather than have Phase 0.2 invent them ad hoc. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: doesn't block Phase 0.1 (DNS lands Phase 0.2), but it's user-visible display behavior built once — cheap to pin the starter values and the display rule now rather than have Phase 0.2 invent them ad hoc. |
 | **Severity** | SHOULD-FIX-BEFORE-CODING |
 | **Location** | `docs/[4] DATA_MODEL.md` (`HostnameObservation.confidence`) vs. `docs/[9] TODO.md` Phase 0.2 |
 
@@ -928,7 +929,7 @@ retained regardless of what's displayed.
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: one sentence plus a type change on a Phase 0.1 type (`ObservationStatus`); cheap to close the same pass its other fields are being touched (PIF-024). |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: one sentence plus a type change on a Phase 0.1 type (`ObservationStatus`); cheap to close the same pass its other fields are being touched (PIF-024). |
 | **Severity** | WORTH-NOTING |
 | **Location** | `docs/[4] DATA_MODEL.md` (`ObservationStatus.reason`, `.provider`; `CorrelationEvidence.source`; `HostnameObservation.source`) |
 
@@ -952,7 +953,7 @@ matching `HostnameObservation.source`'s treatment.
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: this rescopes step F of this very checklist (the permissions spike) — must land in `PERMISSIONS_AND_PLATFORM.md`/`TODO.md` before step F is considered complete, or step F risks returning a green light without answering the questions Phase 0.1's types actually depend on. Bundling with PIF-029 (TCC/hardened runtime) and PIF-030 (negative-result contingency) since all three edit the same "spike" sections. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: this rescopes step F of this very checklist (the permissions spike) — must land in `PERMISSIONS_AND_PLATFORM.md`/`TODO.md` before step F is considered complete, or step F risks returning a green light without answering the questions Phase 0.1's types actually depend on. Bundling with PIF-029 (TCC/hardened runtime) and PIF-030 (negative-result contingency) since all three edit the same "spike" sections. |
 | **Severity** | BLOCKING |
 | **Location** | `docs/[7] PERMISSIONS_AND_PLATFORM.md` ("First technical spike," "TO VERIFY") vs. `docs/[9] TODO.md` Phase 0 permissions-spike bullet vs. `docs/[4] DATA_MODEL.md` (`SocketObservation`) — also directly affects `[3] TODO.md` step F of this pre-implementation checklist |
 
@@ -995,7 +996,7 @@ considered complete.
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: cheap ASSUMED bullet; the failure mode (a spike that passes under `tauri dev` but not under the signed Phase 1.0 build) would otherwise surface at exactly the point `TODO.md` already warns to catch entitlement issues before they're a release blocker. Bundled with PIF-028/030 (same sections). |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: cheap ASSUMED bullet; the failure mode (a spike that passes under `tauri dev` but not under the signed Phase 1.0 build) would otherwise surface at exactly the point `TODO.md` already warns to catch entitlement issues before they're a release blocker. Bundled with PIF-028/030 (same sections). |
 | **Severity** | SHOULD-FIX-BEFORE-CODING |
 | **Location** | `docs/[7] PERMISSIONS_AND_PLATFORM.md` (whole document) |
 
@@ -1028,7 +1029,7 @@ signed binary, not only a dev build.
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: one paragraph; ensures step F actually re-orders Phase 0.1 if same-user socket enumeration turns out to need elevation, instead of that being discovered three tasks into Phase 0.1. Bundled with PIF-028/029 (same sections). |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: one paragraph; ensures step F actually re-orders Phase 0.1 if same-user socket enumeration turns out to need elevation, instead of that being discovered three tasks into Phase 0.1. Bundled with PIF-028/029 (same sections). |
 | **Severity** | SHOULD-FIX-BEFORE-CODING |
 | **Location** | `docs/[7] PERMISSIONS_AND_PLATFORM.md` ("First technical spike") |
 
@@ -1053,7 +1054,7 @@ Do not begin Phase 0.1's provider tasks before recording the spike result here."
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: one line; doesn't block anything before Phase 1.0 but costs nothing to tag now, and this document's whole purpose is separating verified from assumed. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: one line; doesn't block anything before Phase 1.0 but costs nothing to tag now, and this document's whole purpose is separating verified from assumed. |
 | **Severity** | WORTH-NOTING |
 | **Location** | `docs/[7] PERMISSIONS_AND_PLATFORM.md` ("Running the app itself") vs. `docs/[9] TODO.md` Phase 1.0 |
 
@@ -1076,7 +1077,7 @@ account defers packaging without blocking any earlier phase.
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: directly needed to write mandatory test 1's assertion, Phase 0.1; also gives `closed` its one actually-reachable path in this phase, which the `closed`/`expired` rule (PIF-019) currently leaves it without. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: directly needed to write mandatory test 1's assertion, Phase 0.1; also gives `closed` its one actually-reachable path in this phase, which the `closed`/`expired` rule (PIF-019) currently leaves it without. |
 | **Severity** | SHOULD-FIX-BEFORE-CODING |
 | **Location** | `docs/[8] TESTING_STRATEGY.md` (mandatory test 1) vs. `docs/[4] DATA_MODEL.md` ("closed vs. expired" rule) — related to PIF-019 |
 
@@ -1110,7 +1111,7 @@ connections for the session's lifetime rather than removing them from command ou
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: doesn't block Phase 0.1 (lands Phase 0.4), but Phase 0's own stated principle is deciding the Tauri capability allowlist scope "from the first commit, not a hardening pass to do at the end" — naming the `reveal_raw` command now means it's designed into that allowlist from the start rather than added as an afterthought. Security-relevant UI path, cheap as a doc-only addition today. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: doesn't block Phase 0.1 (lands Phase 0.4), but Phase 0's own stated principle is deciding the Tauri capability allowlist scope "from the first commit, not a hardening pass to do at the end" — naming the `reveal_raw` command now means it's designed into that allowlist from the start rather than added as an afterthought. Security-relevant UI path, cheap as a doc-only addition today. |
 | **Severity** | SHOULD-FIX-BEFORE-CODING |
 | **Location** | `docs/[8] TESTING_STRATEGY.md` (frontend tests) vs. `docs/[4] DATA_MODEL.md` (`HTTPRequest`) vs. `docs/[9] TODO.md` Phase 0.4 ("show anyway") vs. `docs/[3] ARCHITECTURE.md` (frontend never contains redaction logic) |
 
@@ -1145,7 +1146,7 @@ allowlist." Add the command to `TODO.md` Phase 0.4.
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: real four-document conflict, resolved by counting — `ARCHITECTURE.md`, `DATA_MODEL.md`'s intent, and `TODO.md` Phase 1.0 all already point at Phase 0.3; only `TODO.md`'s own Phase 0.2 bullet disagrees with the rest of the set. Moving that one bullet to Phase 0.3 and fixing the per-connection wording in the same edit is cheap and removes the exact conflation ADR-012 already warned about. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: real four-document conflict, resolved by counting — `ARCHITECTURE.md`, `DATA_MODEL.md`'s intent, and `TODO.md` Phase 1.0 all already point at Phase 0.3; only `TODO.md`'s own Phase 0.2 bullet disagrees with the rest of the set. Moving that one bullet to Phase 0.3 and fixing the per-connection wording in the same edit is cheap and removes the exact conflation ADR-012 already warned about. |
 | **Severity** | SHOULD-FIX-BEFORE-CODING |
 | **Location** | `docs/[9] TODO.md` Phase 0.2 vs. `docs/[3] ARCHITECTURE.md` (Phase 0.3) vs. `docs/[4] DATA_MODEL.md` ("Not implemented in Phase 0.1") vs. `docs/[9] TODO.md` Phase 1.0 |
 
@@ -1178,7 +1179,7 @@ self-report.
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: not a separate content fix — resolved automatically once PIF-001 (envelope), PIF-007 (provider status type), and PIF-017 (Redactor ownership) land in `ARCHITECTURE.md`; this entry just tracks re-stamping the "Frozen for Phase 0.1" line with a date once those three are in, so the freeze is honest when Phase 0.1 actually starts. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: not a separate content fix — resolved automatically once PIF-001 (envelope), PIF-007 (provider status type), and PIF-017 (Redactor ownership) land in `ARCHITECTURE.md`; this entry just tracks re-stamping the "Frozen for Phase 0.1" line with a date once those three are in, so the freeze is honest when Phase 0.1 actually starts. |
 | **Severity** | SHOULD-FIX-BEFORE-CODING |
 | **Location** | `docs/[3] ARCHITECTURE.md` (Status: Frozen for Phase 0.1) |
 
@@ -1207,7 +1208,7 @@ and that it's frozen *after* the Round 2 pre-implementation audit's fixes landed
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: documents an already-made architectural choice (mitmproxy, per ADR-003/009/013) honestly — no behavior or scope change, purely closing a gap between what the report claims and what the chosen mechanism actually does. Consistent with the report's own stated bar ("honest about visibility limits") and with ADR-011's precedent of correcting overclaiming language elsewhere in this same report. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: documents an already-made architectural choice (mitmproxy, per ADR-003/009/013) honestly — no behavior or scope change, purely closing a gap between what the report claims and what the chosen mechanism actually does. Consistent with the report's own stated bar ("honest about visibility limits") and with ADR-011's precedent of correcting overclaiming language elsewhere in this same report. |
 | **Severity** | SHOULD-FIX-BEFORE-CODING |
 | **Location** | `docs/[1] process-network-inspector-report.md` §2 ("explicitly out of scope") vs. `docs/[3] ARCHITECTURE.md` (Stack) vs. `docs/[7] PERMISSIONS_AND_PLATFORM.md` (Traffic capture) |
 
@@ -1245,7 +1246,7 @@ removal.
 
 | | |
 |---|---|
-| **Status** | Fix now — decided 2026-09-07. Reason: one guardrail bullet in a Phase 2 section that's optional/distant and may never be built — costs nothing to add now, and closes the one spot in the whole roadmap where the platform primitive itself is a control capability rather than an observation one. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: one guardrail bullet in a Phase 2 section that's optional/distant and may never be built — costs nothing to add now, and closes the one spot in the whole roadmap where the platform primitive itself is a control capability rather than an observation one. |
 | **Severity** | WORTH-NOTING |
 | **Location** | `docs/[9] TODO.md` Phase 2 |
 

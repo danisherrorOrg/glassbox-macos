@@ -48,30 +48,36 @@ into one step.
 
 ## C — Apply fixes
 
-Current known items as of Round 1 (Round 2 may add more — check `[2] FINDINGS.md`
-for the live list before starting this step):
+**Done 2026-09-07, commit `fc4ec5e`.** This bullet list predates Round 2 and named
+only Round 1's six items; the actual scope ended up being all 36 findings step B
+marked `Fix now` (see `[2] FINDINGS.md`'s Status column, which was the live,
+authoritative list by the time this step ran, per the note left in step B above) —
+kept below in its original form for the historical record of what was originally
+scoped, not as the actual done-list.
 
-- [ ] **PIF-001** (BLOCKING) — add `ObservationStatus` to `ProcessInfo` in
+- [x] **PIF-001** (BLOCKING) — add `ObservationStatus` to `ProcessInfo` in
       `DATA_MODEL.md`, and define the top-level envelope for list-returning Tauri
       commands (`get_processes`, `get_connections(pid)`).
-- [ ] **PIF-005** — name the connection-matching composite key candidates in
+- [x] **PIF-005** — name the connection-matching composite key candidates in
       `DATA_MODEL.md`.
-- [ ] **PIF-003** — write the actual `ObservationState` Rust enum + serde attribute
+- [x] **PIF-003** — write the actual `ObservationState` Rust enum + serde attribute
       in `DATA_MODEL.md`.
-- [ ] **PIF-002** — give the correlation `unmatched` outcome a home (`TrafficEvent
+- [x] **PIF-002** — give the correlation `unmatched` outcome a home (`TrafficEvent
       .status` or a new `CorrelationResult` type) — needed before Phase 0.3, not
       Phase 0.1, but cheap to do now while the design is already open.
-- [ ] **PIF-004** — move the body-preview size-limit *definition* earlier (out of
+- [x] **PIF-004** — move the body-preview size-limit *definition* earlier (out of
       Phase 0.6, into Phase 0.4), or explicitly mark Phase 0.4's constant as
       provisional.
-- [ ] **PIF-006** — define the staleness formula relative to the configurable
+- [x] **PIF-006** — define the staleness formula relative to the configurable
       polling interval.
-- [ ] Any additional items decided "fix now" in step B.
-- [ ] **Record an ADR** in `docs/[2] DECISIONS.md` summarizing what changed and why,
+- [x] Any additional items decided "fix now" in step B. Done: all 30 Round-2-only
+      `Fix now` items (`PIF-007`–`PIF-037` minus the deferred `PIF-016`) applied
+      across `docs/[1]` through `docs/[9]` in the same commit.
+- [x] **Record an ADR** in `docs/[2] DECISIONS.md` summarizing what changed and why,
       in the same format as ADR-011/ADR-012 ("cross-document consistency pass") —
       this is the same kind of fix those two entries document, and the project's own
       convention is that this history doesn't go unrecorded just because the fix
-      originated from an external audit rather than an internal one.
+      originated from an external audit rather than an internal one. Done: ADR-014.
 
 ## D — Re-verification pass
 
@@ -124,11 +130,11 @@ folded back in (last bullet below) if they turn out to matter, before any real
 
 ---
 
-**Current state (2026-09-07):** Steps A and B complete. All 37 findings
-(`PIF-001`–`PIF-037`) are decided in `[2] FINDINGS.md`: 36 `Fix now`, 1 (`PIF-016`)
-`Deferred` to a standalone Phase 0 commit. Step C (apply fixes) has not started —
-that's next. Since step B decided *almost* everything should be fixed now rather
-than deferred, step C's scope is effectively "all 36 `Fix now` findings across
-`docs/`," not just the shorter Round-1-only list originally sketched in step C's
-bullets below — treat `[2] FINDINGS.md`'s Status column as the live, authoritative
-list for step C, not the bullets under "C — Apply fixes" (which predate Round 2).
+**Current state (2026-09-07):** Steps A, B, and C complete. All 36 `Fix now`
+findings are applied to `docs/` and committed (`fc4ec5e`), recorded as ADR-014
+(`docs/[2] DECISIONS.md`), and each finding in `[2] FINDINGS.md` is marked `Fixed`
+with that commit cited. PIF-016 remains `Deferred` to its own standalone mechanical
+commit (not yet done — do it before step E's final gate, since it's still part of
+this pre-implementation gate). **Step D (re-verification pass) is next:** re-run
+`[1] AUDIT_PROMPT.md` against the now-updated `docs/` to confirm the fixes actually
+landed and didn't introduce anything new.
