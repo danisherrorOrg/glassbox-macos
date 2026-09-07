@@ -81,10 +81,19 @@ scoped, not as the actual done-list.
 
 ## D — Re-verification pass
 
-- [ ] After step C, re-run `[1] AUDIT_PROMPT.md` once more against the updated
+- [x] After step C, re-run `[1] AUDIT_PROMPT.md` once more against the updated
       `docs/` (either model is fine here — this pass is checking "did the fixes
       actually land and not introduce anything new," not independent discovery).
+      Done 2026-09-07 (Round 3 in `[2] FINDINGS.md`): found two of the 36 `Fixed`
+      findings (PIF-012, PIF-032) were only half-applied in commit `fc4ec5e` — each
+      had a two-part proposed fix where one part was missed. Both corrected in
+      commit `85249b0`, along with one new low-stakes item (PIF-038, fixed same
+      commit) and one confirmed non-issue (PIF-039). Zero new BLOCKING findings.
 - [ ] Repeat A–D until a round produces zero new BLOCKING/SHOULD-FIX findings.
+      Not yet satisfied — Round 3 *did* find two SHOULD-FIX-level regressions
+      (the half-applied fixes above), even though they're now closed. Running one
+      more re-verification pass (Round 4) to confirm those corrections landed
+      cleanly and nothing else turns up, before treating this loop as converged.
 
 ## E — Final gate before Phase 0.1
 

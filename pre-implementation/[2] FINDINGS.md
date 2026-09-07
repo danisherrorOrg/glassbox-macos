@@ -514,7 +514,7 @@ to "connection-opened / connection-closed / connection-expired."
 
 | | |
 |---|---|
-| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: `TODO.md` just needs to catch up to ADR-004's already-made decision — add the Phase 0.1 "define, don't wire in" bullet and reword Phase 0.5's. Prevents Phase 0.4's HTTP wiring from calcifying onto `NetworkConnection` directly, which is exactly the outcome ADR-004 exists to avoid. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: `TODO.md` just needs to catch up to ADR-004's already-made decision — add the Phase 0.1 "define, don't wire in" bullet and reword Phase 0.5's. Prevents Phase 0.4's HTTP wiring from calcifying onto `NetworkConnection` directly, which is exactly the outcome ADR-004 exists to avoid. **Correction (step D, 2026-09-07):** the `TODO.md` half of this fix landed, but `TESTING_STRATEGY.md`'s "Integration tests" example line — which the original proposed fix explicitly named — was missed; it still read `expected Flow, redacted`, the exact phase-boundary leak this finding exists to prevent. Caught by the Step D re-verification pass, fixed in commit `85249b0`. |
 | **Severity** | SHOULD-FIX-BEFORE-CODING |
 | **Location** | `docs/[2] DECISIONS.md` ADR-004 vs. `docs/[4] DATA_MODEL.md` (`Flow`) vs. `docs/[9] TODO.md` Phase 0.5 vs. `docs/[8] TESTING_STRATEGY.md` (integration tests) |
 
@@ -1077,7 +1077,7 @@ account defers packaging without blocking any earlier phase.
 
 | | |
 |---|---|
-| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: directly needed to write mandatory test 1's assertion, Phase 0.1; also gives `closed` its one actually-reachable path in this phase, which the `closed`/`expired` rule (PIF-019) currently leaves it without. |
+| **Status** | Fixed — decided 2026-09-07, applied in commit `fc4ec5e`. Reason: directly needed to write mandatory test 1's assertion, Phase 0.1; also gives `closed` its one actually-reachable path in this phase, which the `closed`/`expired` rule (PIF-019) currently leaves it without. **Correction (step D, 2026-09-07):** the `DATA_MODEL.md` half of this fix (process-exit as the `closed` signal) landed, but the second half of the original proposed fix — the `TODO.md` Phase 0.1 bullet stating the Engine retains exited processes/connections in command output — was missed, leaving mandatory test 1 citing a rule that wasn't actually written down anywhere in Phase 0.1. Caught by the Step D re-verification pass, fixed in commit `85249b0`. |
 | **Severity** | SHOULD-FIX-BEFORE-CODING |
 | **Location** | `docs/[8] TESTING_STRATEGY.md` (mandatory test 1) vs. `docs/[4] DATA_MODEL.md` ("closed vs. expired" rule) — related to PIF-019 |
 
@@ -1274,3 +1274,77 @@ requires reopening `process-network-inspector-report.md` §2 first.
 |---|---|
 | Scope-creep tripwire (category 7), feature-level | Clean across every phase including Phase 2 — no task edges toward modify/replay/inject. (Two documentation-honesty gaps found and logged as PIF-036, PIF-037; not scope creep in the roadmap itself.) |
 | The "who constructs this type" rule (category 2), for `NetworkConnection`, `ProcessInfo`, `Flow`, `TrafficEvent` | Clean — no TODO task hands construction of these four to a provider. (`ObservationStatus` and `HostnameObservation` are not clean — PIF-007, PIF-009.) |
+
+---
+
+## Round 3 — re-verification pass (step D), run 2026-09-07 against commit `fc4ec5e`
+
+Per `[3] TODO.md` step D, this pass checks two things against the post-fix `docs/`:
+(1) did all 36 `Fixed` findings actually land correctly, and (2) does a fresh full
+7-category pass turn up anything new. Not independent discovery — the agent read
+`[2] FINDINGS.md` deliberately, to check each fix against its own proposed text.
+
+**Result:** two of the 36 `Fixed` findings (PIF-012, PIF-032) turned out
+half-applied — each had a two-part proposed fix where only one part actually
+landed in commit `fc4ec5e`. Both corrected in commit `85249b0`; see the
+"Correction (step D...)" notes added to those two entries above. All other 34
+`Fixed` findings were individually checked against current doc text and confirmed
+landed as described. Two new, low-stakes items surfaced (below). Zero new BLOCKING
+findings. PIF-016 confirmed still correctly `Deferred` (not re-flagged).
+
+### At a glance (Round 3 new findings)
+
+| ID | Severity | Status | Summary |
+|---|---|---|---|
+| [PIF-038](#pif-038--observationcapabilities-had-no-named-provider-owned-self-report-type) | WORTH-NOTING | Fixed | `ObservationCapabilities` had no named provider-owned self-report type |
+| [PIF-039](#pif-039--correlationevidencesource-still-a-free-form-string-unlike-hostnameobservationsource) | WORTH-NOTING | Not an issue | `CorrelationEvidence.source` still a free-form string, unlike `HostnameObservation.source` |
+
+### PIF-038 — `ObservationCapabilities` had no named provider-owned self-report type
+
+| | |
+|---|---|
+| **Status** | Fixed — decided and applied 2026-09-07, commit `85249b0`. Reason: every other Engine-owned type in `DATA_MODEL.md` has a named provider-owned counterpart it's built from (`ProcessObservation`→`ProcessInfo`, `ProviderStatus`→`ObservationStatus`, etc.); `ObservationCapabilities` was the one exception, described only as "aggregated from each provider's self-report" with nothing named for what a provider actually returns. Low-stakes (Phase 0.3, not persisted, largely static per provider) but a one-line fix consistent with an already-established pattern, cheap enough to close immediately rather than leave as a genuine gap. |
+| **Severity** | WORTH-NOTING |
+| **Location** | `docs/[4] DATA_MODEL.md` (`ObservationCapabilities`) vs. `docs/[9] TODO.md` Phase 0.3 |
+
+**Issue**
+
+`ObservationCapabilities`'s ownership note said "Engine-owned, aggregated from each
+provider's self-report" without naming a type for that self-report — the one
+Engine-owned type in this document without a named provider-owned counterpart.
+
+**Why it matters**
+
+Low-stakes on its own (nothing persisted, no cross-document contradiction), but
+worth closing for consistency with every other type in the document, which all
+follow the same provider-owned/Engine-owned split.
+
+**Fix applied**
+
+Named `ProviderCapabilities` as the provider-owned counterpart, exposed via a
+`capabilities() -> ProviderCapabilities` trait method, aggregated by the Engine into
+`ObservationCapabilities` on `get_capabilities()`.
+
+---
+
+### PIF-039 — `CorrelationEvidence.source` still a free-form string, unlike `HostnameObservation.source`
+
+| | |
+|---|---|
+| **Status** | Not an issue — decided 2026-09-07. Reason: `CorrelationEvidence.source` describes which capture *mechanism* produced a piece of evidence (e.g. `"sni-sniff"`), an open-ended, provider-implementation-specific label — not a fixed provider-kind enum like `HostnameObservation.source`'s `{ReverseDns, Sni, HttpHost}`, which enumerates a small, closed set of DNS-signal sources. PIF-027's original finding named both fields as inconsistent, but its proposed fix (and what was actually applied) only converted `ObservationStatus.provider` — a genuinely closed, small set (`{Process, Socket, Dns, Traffic, Engine}`) — to an enum. Re-reading `CorrelationEvidence`'s own definition confirms `source` is meant to stay open-ended prose, same treatment as `ObservationStatus.reason`. No change needed. |
+| **Severity** | WORTH-NOTING |
+| **Location** | `docs/[4] DATA_MODEL.md` (`CorrelationEvidence.source`) |
+
+**Issue**
+
+A prior finding (PIF-027) flagged both `ObservationStatus.provider` and
+`CorrelationEvidence.source` as free-form strings inconsistent with
+`HostnameObservation.source`'s enum treatment. Only the former was converted; this
+flags that the latter appears, at a glance, to be an inconsistent leftover.
+
+**Why it's not an issue**
+
+`CorrelationEvidence.source` is documented as "which provider/mechanism produced
+this evidence" — an open-ended, implementation-specific label (unlike
+`HostnameObservation.source`'s closed three-value set), so a free-form `String` is
+the correct type here, not a missed conversion.
