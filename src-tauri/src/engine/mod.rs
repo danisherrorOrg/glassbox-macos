@@ -568,24 +568,9 @@ impl ObservationEngine {
         Envelope::ok(status, data)
     }
 
-    /// Starts traffic capture for `pid` (`docs/[9] TODO.md` Phase 0.3).
-    /// Blocks the calling thread for up to a few seconds (tears down any
-    /// previous session first) — fine for tests calling this directly on
-    /// an owned, unlocked `Engine`, but a Tauri command must go through
-    /// `traffic_provider()` + `spawn_blocking` instead so this doesn't run
-    /// while holding the shared engine lock.
-    pub fn start_traffic_capture(&mut self, pid: u32) -> ProviderStatus {
-        self.traffic_provider.start(pid)
-    }
-
-    /// Same blocking caveat as `start_traffic_capture`.
-    pub fn stop_traffic_capture(&mut self) {
-        self.traffic_provider.stop();
-    }
-
     /// Ongoing health of the current (or most recent) capture session —
     /// Phase 0.3 code-review gap 4/6 (`docs/[9] TODO.md`). Distinct from
-    /// `start_traffic_capture`'s return value, which only ever reports
+    /// `TrafficProvider::start`'s return value, which only ever reports
     /// whether the helper process was spawned; this reflects whether it's
     /// actually still connected and streaming.
     pub fn traffic_status(&self) -> ProviderStatus {
@@ -1484,7 +1469,7 @@ mod engine_tests {
             Arc::new(traffic),
         );
 
-        let start_status = engine.start_traffic_capture(target_pid);
+        let start_status = engine.traffic_provider().start(target_pid);
         assert_eq!(
             start_status.state,
             crate::models::ProviderState::Observed,
@@ -1576,7 +1561,7 @@ mod engine_tests {
             tokio::time::sleep(Duration::from_millis(700)).await;
         }
 
-        engine.stop_traffic_capture();
+        engine.traffic_provider().stop();
         let _ = target.kill();
         let _ = unrelated.kill();
         let _ = target.wait();

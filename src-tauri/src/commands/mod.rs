@@ -18,7 +18,6 @@ use crate::models::{
     Envelope, NetworkConnection, ObservationCapabilities, ProcessInfo, ProviderStatus,
     ResolvedHostname, TrafficEvent,
 };
-use crate::providers::TrafficProvider;
 
 pub use monitoring::{MonitoringController, MonitoringHandle};
 
