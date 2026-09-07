@@ -31,7 +31,7 @@ export type ProcessState = "running" | "exited";
 export interface ProcessInfo {
   pid: number;
   name: string;
-  executable_path: string;
+  executable_path: string | null;
   cpu_percent: number | null;
   memory_bytes: number | null;
   process_state: ProcessState;

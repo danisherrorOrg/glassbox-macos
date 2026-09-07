@@ -65,6 +65,7 @@ export function ProcessList({
             <tr>
               <th>Name</th>
               <th>PID</th>
+              <th>Path</th>
               <th>Connections</th>
               <th>Status</th>
             </tr>
@@ -72,7 +73,7 @@ export function ProcessList({
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={4} className="process-list__empty">
+                <td colSpan={5} className="process-list__empty">
                   No processes observed.
                 </td>
               </tr>
@@ -85,6 +86,15 @@ export function ProcessList({
                 >
                   <td>{p.name}</td>
                   <td>{p.pid}</td>
+                  <td>
+                    {p.executable_path !== null ? (
+                      <span className="process-list__path" title={p.executable_path}>
+                        {p.executable_path}
+                      </span>
+                    ) : (
+                      <span className="process-list__path-unknown">path unknown</span>
+                    )}
+                  </td>
                   <td>{p.active_connection_count ?? "—"}</td>
                   <td>
                     <StatusBadge state={p.status.state} reason={p.status.reason} />

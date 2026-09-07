@@ -47,12 +47,13 @@ impl ProcessProvider for SysinfoProcessProvider {
             .iter()
             .map(|(pid, process)| {
                 let pid_u32 = pid.as_u32();
+                // `None` (not `""`) when both sources fail — see the
+                // `executable_path` doc comment on `ProcessObservation`.
                 let executable_path = process
                     .exe()
                     .map(|p| p.to_string_lossy().to_string())
                     .filter(|s| !s.is_empty())
-                    .or_else(|| proc_pidpath_fallback(pid_u32))
-                    .unwrap_or_default();
+                    .or_else(|| proc_pidpath_fallback(pid_u32));
 
                 ProcessObservation {
                     pid: pid_u32,

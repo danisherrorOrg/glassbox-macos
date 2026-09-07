@@ -24,7 +24,7 @@ use crate::providers::{DNSProvider, ProcessProvider, SocketProvider};
 /// are computed at query time from the engine's current layer statuses.
 struct TrackedProcess {
     name: String,
-    executable_path: String,
+    executable_path: Option<String>,
     cpu_percent: Option<f32>,
     memory_bytes: Option<u64>,
     process_state: ProcessState,
@@ -573,7 +573,7 @@ mod engine_tests {
                 .map(|&pid| ProcessObservation {
                     pid,
                     name: format!("proc-{pid}"),
-                    executable_path: format!("/usr/bin/proc-{pid}"),
+                    executable_path: Some(format!("/usr/bin/proc-{pid}")),
                     cpu_percent: Some(0.0),
                     memory_bytes: Some(1024),
                 })
@@ -1025,6 +1025,36 @@ mod engine_tests {
             at_t2.status.state,
             ObservationState::Stale,
             "4s > 3s threshold (3 * 1000ms poll interval)"
+        );
+    }
+
+    /// A provider that couldn't determine `executable_path` (e.g. both
+    /// `sysinfo::Process::exe()` and the `proc_pidpath` fallback failed —
+    /// genuinely happens for `pid 0`/`kernel_task`) must surface `None`,
+    /// never a silent `""` that would look like a real, observed empty path.
+    #[test]
+    fn unknown_executable_path_is_none_not_empty_string() {
+        let t0 = Utc::now();
+        let process = MockProcessProvider::new(vec![crate::models::ProcessSnapshot {
+            timestamp: t0,
+            observations: vec![crate::models::ProcessObservation {
+                pid: 0,
+                name: "kernel_task".to_string(),
+                executable_path: None,
+                cpu_percent: Some(0.0),
+                memory_bytes: Some(0),
+            }],
+            status: ProviderStatus::observed(t0),
+        }]);
+        let socket = MockSocketProvider::new(vec![socket_snapshot_empty(t0)]);
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider));
+
+        let processes = engine.get_processes();
+        let info = &processes.data.unwrap()[0];
+        assert_eq!(info.pid, 0);
+        assert_eq!(
+            info.executable_path, None,
+            "unknown path must be None, never a silent empty string standing in for real data"
         );
     }
 }

@@ -46,3 +46,19 @@
   color: #6b7280;
   font-style: italic;
 }
+
+.process-list__path {
+  display: inline-block;
+  max-width: 22em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  font-family: monospace;
+  font-size: 0.9em;
+}
+
+.process-list__path-unknown {
+  color: #6b7280;
+  font-style: italic;
+}

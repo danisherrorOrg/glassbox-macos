@@ -11,7 +11,13 @@ use super::status::{ObservationStatus, ProviderStatus};
 pub struct ProcessObservation {
     pub pid: u32,
     pub name: String,
-    pub executable_path: String,
+    /// `None` when neither `sysinfo::Process::exe()` nor the `proc_pidpath`
+    /// FFI fallback could resolve a path — genuinely happens for `pid 0`
+    /// (`kernel_task`), which `sysinfo` does enumerate on macOS. Never
+    /// rendered as `""`; that would silently look like a real (empty) path
+    /// rather than "unknown" (`docs/OBSERVATION_CONTRACT.md`'s no-inference
+    /// rule).
+    pub executable_path: Option<String>,
     pub cpu_percent: Option<f32>,
     pub memory_bytes: Option<u64>,
 }
@@ -38,7 +44,9 @@ pub enum ProcessState {
 pub struct ProcessInfo {
     pub pid: u32,
     pub name: String,
-    pub executable_path: String,
+    /// See `ProcessObservation.executable_path` — `None` means genuinely
+    /// unknown, not a real empty path.
+    pub executable_path: Option<String>,
     pub cpu_percent: Option<f32>,
     pub memory_bytes: Option<u64>,
     pub process_state: ProcessState,
