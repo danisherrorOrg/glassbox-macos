@@ -57,7 +57,7 @@ pub struct ObservationEngine {
     process_provider: Box<dyn ProcessProvider>,
     socket_provider: Box<dyn SocketProvider>,
     dns_provider: Arc<dyn DNSProvider>,
-    traffic_provider: Box<dyn TrafficProvider>,
+    traffic_provider: Arc<dyn TrafficProvider>,
     processes: HashMap<u32, TrackedProcess>,
     connections: HashMap<String, NetworkConnection>,
     next_connection_seq: u64,
@@ -97,7 +97,7 @@ impl ObservationEngine {
         process_provider: Box<dyn ProcessProvider>,
         socket_provider: Box<dyn SocketProvider>,
         dns_provider: Arc<dyn DNSProvider>,
-        traffic_provider: Box<dyn TrafficProvider>,
+        traffic_provider: Arc<dyn TrafficProvider>,
     ) -> Self {
         Self {
             process_provider,
@@ -398,6 +398,16 @@ impl ObservationEngine {
         self.dns_provider.clone()
     }
 
+    /// Same reasoning as `dns_provider()`: `start`/`stop` on the traffic
+    /// provider block the calling thread for up to a few seconds
+    /// (`MitmproxyTrafficProvider::terminate_child`), so callers clone this
+    /// handle, drop the engine lock, and run them via `spawn_blocking`
+    /// rather than calling `start_traffic_capture`/`stop_traffic_capture`
+    /// while holding it — see `commands::start_traffic_capture`.
+    pub fn traffic_provider(&self) -> Arc<dyn TrafficProvider> {
+        self.traffic_provider.clone()
+    }
+
     pub fn record_hostname(&mut self, addr: String, observation: Option<HostnameObservation>) {
         self.dns_in_flight.remove(&addr);
         self.hostname_cache.insert(addr, observation);
@@ -559,10 +569,16 @@ impl ObservationEngine {
     }
 
     /// Starts traffic capture for `pid` (`docs/[9] TODO.md` Phase 0.3).
+    /// Blocks the calling thread for up to a few seconds (tears down any
+    /// previous session first) — fine for tests calling this directly on
+    /// an owned, unlocked `Engine`, but a Tauri command must go through
+    /// `traffic_provider()` + `spawn_blocking` instead so this doesn't run
+    /// while holding the shared engine lock.
     pub fn start_traffic_capture(&mut self, pid: u32) -> ProviderStatus {
         self.traffic_provider.start(pid)
     }
 
+    /// Same blocking caveat as `start_traffic_capture`.
     pub fn stop_traffic_capture(&mut self) {
         self.traffic_provider.stop();
     }
@@ -746,7 +762,7 @@ mod engine_tests {
             socket_snapshot_established(t0, 100),
             socket_snapshot_empty(t1),
         ]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Box::new(crate::tests::MockTrafficProvider::default()));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Arc::new(crate::tests::MockTrafficProvider::default()));
 
         let processes = engine.get_processes();
         assert_eq!(
@@ -783,7 +799,7 @@ mod engine_tests {
             socket_snapshot_established(t0, 200),
             socket_snapshot_empty(t1), // same PID still running, socket just gone
         ]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Box::new(crate::tests::MockTrafficProvider::default()));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Arc::new(crate::tests::MockTrafficProvider::default()));
 
         let first = engine.get_connections(200);
         assert_eq!(
@@ -815,7 +831,7 @@ mod engine_tests {
                 status: ProviderStatus::transient_failure(t1, "netstat2 call failed"),
             },
         ]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Box::new(crate::tests::MockTrafficProvider::default()));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Arc::new(crate::tests::MockTrafficProvider::default()));
 
         let first = engine.get_connections(300);
         let first_conn = first.data.unwrap()[0].clone();
@@ -847,7 +863,7 @@ mod engine_tests {
         let process = MockProcessProvider::new(vec![process_snapshot(t0, &[400])]);
         let socket =
             MockSocketProvider::new(vec![socket_snapshot_empty(t0)]).with_denied_pids(vec![999]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Box::new(crate::tests::MockTrafficProvider::default()));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Arc::new(crate::tests::MockTrafficProvider::default()));
 
         let result = engine.get_connections(999);
         assert_eq!(result.status.state, ObservationState::PermissionDenied);
@@ -880,7 +896,7 @@ mod engine_tests {
         listen_snapshot_2.status = ProviderStatus::observed(t1);
 
         let socket = MockSocketProvider::new(vec![listen_snapshot, listen_snapshot_2]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Box::new(crate::tests::MockTrafficProvider::default()));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Arc::new(crate::tests::MockTrafficProvider::default()));
 
         let first = engine.get_connections(500);
         assert_eq!(
@@ -907,7 +923,7 @@ mod engine_tests {
             Box::new(crate::providers::SysinfoProcessProvider::new()),
             Box::new(crate::providers::NetstatSocketProvider),
             Arc::new(crate::providers::ReverseDnsProvider),
-            Box::new(crate::providers::MitmproxyTrafficProvider::default()),
+            Arc::new(crate::providers::MitmproxyTrafficProvider::default()),
         );
 
         let own_pid = std::process::id();
@@ -941,7 +957,7 @@ mod engine_tests {
             Box::new(crate::providers::SysinfoProcessProvider::new()),
             Box::new(crate::providers::NetstatSocketProvider),
             Arc::new(crate::providers::ReverseDnsProvider),
-            Box::new(crate::providers::MitmproxyTrafficProvider::default()),
+            Arc::new(crate::providers::MitmproxyTrafficProvider::default()),
         );
         let connections = engine.get_connections(own_pid);
         let data = connections.data.expect("get_connections must carry data when observed");
@@ -986,7 +1002,7 @@ mod engine_tests {
             snap2,
             snap3,
         ]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Box::new(crate::tests::MockTrafficProvider::default()));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Arc::new(crate::tests::MockTrafficProvider::default()));
 
         let first_id = engine.get_connections(600).data.unwrap()[0].connection_id.clone();
         let after_gap = engine.get_connections(600);
@@ -1031,7 +1047,7 @@ mod engine_tests {
             socket_snapshot_established(t0, 700),
             socket_snapshot_empty(t1),
         ]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Box::new(crate::tests::MockTrafficProvider::default()));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Arc::new(crate::tests::MockTrafficProvider::default()));
 
         engine.get_processes(); // t0: consumes the "running" process snapshot
         engine.get_connections(700); // t0: opened
@@ -1054,7 +1070,7 @@ mod engine_tests {
         let t0 = Utc::now();
         let process = MockProcessProvider::new(vec![process_snapshot(t0, &[710])]);
         let socket = MockSocketProvider::new(vec![socket_snapshot_established(t0, 710)]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Box::new(crate::tests::MockTrafficProvider::default()));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Arc::new(crate::tests::MockTrafficProvider::default()));
 
         engine.get_connections(710);
         let pending = engine.take_pending_events();
@@ -1074,7 +1090,7 @@ mod engine_tests {
             socket_snapshot_established(t0, 720),
             socket_snapshot_established(t0, 720),
         ]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Box::new(crate::tests::MockTrafficProvider::default()));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Arc::new(crate::tests::MockTrafficProvider::default()));
 
         engine.get_connections(720);
         let first_pending = engine.take_pending_dns_lookups();
@@ -1090,7 +1106,7 @@ mod engine_tests {
         let t0 = Utc::now();
         let process = MockProcessProvider::new(vec![process_snapshot(t0, &[730])]);
         let socket = MockSocketProvider::new(vec![socket_snapshot_established(t0, 730)]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Box::new(crate::tests::MockTrafficProvider::default()));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Arc::new(crate::tests::MockTrafficProvider::default()));
 
         let conn = engine.get_connections(730).data.unwrap()[0].clone();
         assert!(engine.get_hostnames(730).data.unwrap().is_empty(), "nothing resolved yet");
@@ -1134,7 +1150,7 @@ mod engine_tests {
                 status: ProviderStatus::transient_failure(t2, "still down"),
             },
         ]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Box::new(crate::tests::MockTrafficProvider::default()));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Arc::new(crate::tests::MockTrafficProvider::default()));
         engine.set_poll_interval_ms(1000);
 
         engine.get_connections(740); // t0: observed
@@ -1171,7 +1187,7 @@ mod engine_tests {
             status: ProviderStatus::observed(t0),
         }]);
         let socket = MockSocketProvider::new(vec![socket_snapshot_empty(t0)]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Box::new(crate::tests::MockTrafficProvider::default()));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider), Arc::new(crate::tests::MockTrafficProvider::default()));
 
         let processes = engine.get_processes();
         let info = &processes.data.unwrap()[0];
@@ -1209,7 +1225,7 @@ mod engine_tests {
             Box::new(process),
             Box::new(socket),
             Arc::new(MockDnsProvider),
-            Box::new(crate::tests::MockTrafficProvider::default()),
+            Arc::new(crate::tests::MockTrafficProvider::default()),
         );
         let conn = engine.get_connections(800).data.unwrap()[0].clone();
 
@@ -1244,7 +1260,7 @@ mod engine_tests {
             Box::new(process),
             Box::new(socket),
             Arc::new(MockDnsProvider),
-            Box::new(traffic),
+            Arc::new(traffic),
         );
         let conn = engine.get_connections(810).data.unwrap()[0].clone();
 
@@ -1266,7 +1282,7 @@ mod engine_tests {
             Box::new(process),
             Box::new(socket),
             Arc::new(MockDnsProvider),
-            Box::new(crate::tests::MockTrafficProvider::default()),
+            Arc::new(crate::tests::MockTrafficProvider::default()),
         );
         engine.get_connections(801);
 
@@ -1285,7 +1301,7 @@ mod engine_tests {
             Box::new(process),
             Box::new(socket),
             Arc::new(MockDnsProvider),
-            Box::new(crate::tests::MockTrafficProvider::default()),
+            Arc::new(crate::tests::MockTrafficProvider::default()),
         );
         engine.get_connections(802);
 
@@ -1328,7 +1344,7 @@ mod engine_tests {
             Box::new(process),
             Box::new(socket),
             Arc::new(MockDnsProvider),
-            Box::new(crate::tests::MockTrafficProvider::default()),
+            Arc::new(crate::tests::MockTrafficProvider::default()),
         );
         engine.get_processes(); // t0: running
         engine.get_connections(803); // t0: active
@@ -1388,7 +1404,7 @@ mod engine_tests {
             Box::new(process),
             Box::new(socket),
             Arc::new(MockDnsProvider),
-            Box::new(crate::tests::MockTrafficProvider::default()),
+            Arc::new(crate::tests::MockTrafficProvider::default()),
         );
         let data = engine.get_connections(804).data.unwrap();
         assert_eq!(data.len(), 2);
@@ -1465,7 +1481,7 @@ mod engine_tests {
             Box::new(process),
             Box::new(socket),
             Arc::new(dns),
-            Box::new(traffic),
+            Arc::new(traffic),
         );
 
         let start_status = engine.start_traffic_capture(target_pid);

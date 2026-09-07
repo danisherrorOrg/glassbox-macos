@@ -18,6 +18,7 @@ use crate::models::{
     Envelope, NetworkConnection, ObservationCapabilities, ProcessInfo, ProviderStatus,
     ResolvedHostname, TrafficEvent,
 };
+use crate::providers::TrafficProvider;
 
 pub use monitoring::{MonitoringController, MonitoringHandle};
 
@@ -81,17 +82,28 @@ pub async fn get_capabilities(state: State<'_, EngineHandle>) -> Result<Observat
     Ok(engine.get_capabilities())
 }
 
+/// `start`/`stop` on the traffic provider block their calling thread for up
+/// to a few seconds (`MitmproxyTrafficProvider::terminate_child` tearing
+/// down any previous `mitmdump` session) — same "never block while holding
+/// the engine lock" rule `spawn_dns_lookups` follows for the blocking DNS
+/// resolver call. The engine lock is held only long enough to clone the
+/// provider handle; the actual start/stop runs on a `spawn_blocking` thread
+/// afterward, so it no longer stalls every other command (including a
+/// concurrent `get_processes`/`get_connections`) for the duration.
 #[tauri::command]
 pub async fn start_traffic_capture(pid: u32, state: State<'_, EngineHandle>) -> Result<ProviderStatus, ()> {
-    let mut engine = state.lock().await;
-    Ok(engine.start_traffic_capture(pid))
+    let provider = state.lock().await.traffic_provider();
+    tokio::task::spawn_blocking(move || provider.start(pid))
+        .await
+        .map_err(|_| ())
 }
 
 #[tauri::command]
 pub async fn stop_traffic_capture(state: State<'_, EngineHandle>) -> Result<(), ()> {
-    let mut engine = state.lock().await;
-    engine.stop_traffic_capture();
-    Ok(())
+    let provider = state.lock().await.traffic_provider();
+    tokio::task::spawn_blocking(move || provider.stop())
+        .await
+        .map_err(|_| ())
 }
 
 /// Ongoing health of the current (or most recent) capture session — Phase

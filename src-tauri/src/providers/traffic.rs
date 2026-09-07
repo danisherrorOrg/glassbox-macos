@@ -28,7 +28,9 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
@@ -100,6 +102,13 @@ struct CaptureSession {
 }
 
 pub struct MitmproxyTrafficProvider {
+    // Serializes `start()`/`stop()` (both funnel through `stop_locked`)
+    // against each other. Needed now that callers reach this provider via
+    // an `Arc<dyn TrafficProvider>` (see `ObservationEngine::traffic_provider`)
+    // and run `start`/`stop` on a `spawn_blocking` thread rather than while
+    // holding the engine's own lock — nothing else serializes two
+    // concurrent calls otherwise.
+    control_lock: Mutex<()>,
     session: Mutex<Option<CaptureSession>>,
     // `Arc`, not a bare `Mutex` field, so the spawned reader task
     // (`'static`, outliving any single `start()` call) can hold its own
@@ -108,6 +117,12 @@ pub struct MitmproxyTrafficProvider {
     // Same `Arc` reasoning as `flows` — the reader task updates this as the
     // session's real state changes (gap 4/6, see `TrafficProvider::status`).
     status: Arc<Mutex<ProviderStatus>>,
+    // Bumped by `stop_locked` (before aborting the reader task) so that a
+    // status write already past the task's last cancellation checkpoint —
+    // `abort()` only takes effect at the *next* await point — can tell
+    // it's stale and skip itself instead of clobbering the "capture
+    // stopped" status with a late `Observed`/`TransientFailure`.
+    generation: Arc<AtomicU64>,
 }
 
 impl MitmproxyTrafficProvider {
@@ -122,7 +137,15 @@ impl MitmproxyTrafficProvider {
     /// `real_traffic_capture_correlates_to_real_connection` required a
     /// manual `pkill -f "Mitmproxy Redirector"` as test cleanup because of
     /// exactly this.
-    const SIGTERM_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
+    const SIGTERM_GRACE: Duration = Duration::from_secs(2);
+
+    /// Bound on the post-`SIGKILL` reap poll. `SIGKILL` should be reaped
+    /// near-instantly in practice; this is a fast-path wait, not the only
+    /// guarantee against a lingering zombie — `kill_on_drop(true)` (set at
+    /// spawn) still reaps `child` in the background if this bound is ever
+    /// exceeded (e.g. a starved CI runner), so exceeding it costs a delayed
+    /// reap, not a leaked process.
+    const SIGKILL_REAP_BOUND: Duration = Duration::from_secs(2);
 
     /// Terminates `child` and blocks until it has actually exited (or the
     /// grace period elapses and `SIGKILL` is used instead), so that by the
@@ -152,42 +175,85 @@ impl MitmproxyTrafficProvider {
                 libc::kill(pid as libc::pid_t, libc::SIGTERM);
             }
         }
-        let deadline = std::time::Instant::now() + Self::SIGTERM_GRACE;
-        loop {
-            match child.try_wait() {
-                Ok(Some(_)) => return, // exited cleanly on its own
-                Err(_) => return,      // already gone / unwaitable — nothing more to do
-                Ok(None) => {
-                    if std::time::Instant::now() >= deadline {
-                        break;
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(50));
-                }
-            }
+        if Self::poll_until_exited(&mut child, Self::SIGTERM_GRACE, Duration::from_millis(50)) {
+            return; // exited cleanly on its own
         }
         // Grace period elapsed and it's still alive -- escalate.
         let _ = child.start_kill();
-        // Reap it so it doesn't linger as a zombie; bounded the same way,
-        // though SIGKILL should be near-instant in practice.
-        let reap_deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
-        while std::time::Instant::now() < reap_deadline {
-            if matches!(child.try_wait(), Ok(Some(_)) | Err(_)) {
-                break;
+        Self::poll_until_exited(&mut child, Self::SIGKILL_REAP_BOUND, Duration::from_millis(20));
+    }
+
+    /// Polls `child.try_wait()` (non-blocking) until it reports the child
+    /// has exited (or become otherwise unwaitable) or `bound` elapses.
+    /// Returns whether it exited within `bound`. Shared by the
+    /// `SIGTERM`-grace wait and the post-`SIGKILL` reap in
+    /// `terminate_child` — same "poll until deadline" shape, different
+    /// constants.
+    fn poll_until_exited(child: &mut Child, bound: Duration, interval: Duration) -> bool {
+        let deadline = Instant::now() + bound;
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) | Err(_) => return true,
+                Ok(None) => {
+                    if Instant::now() >= deadline {
+                        return false;
+                    }
+                    std::thread::sleep(interval);
+                }
             }
-            std::thread::sleep(std::time::Duration::from_millis(20));
         }
+    }
+
+    /// Detaches and tears down the current session, if any. Shared by
+    /// `stop()` and `start()`'s "replace any previous session" step.
+    /// Assumes `control_lock` is already held by the caller.
+    fn stop_locked(&self) {
+        if let Some(session) = self.session.lock().unwrap().take() {
+            // Invalidate the outgoing reader task's status writes *before*
+            // aborting it — see the `generation` field's doc comment for
+            // why this ordering matters.
+            self.generation.fetch_add(1, Ordering::SeqCst);
+            session.reader_task.abort();
+            *self.status.lock().unwrap() = ProviderStatus::unavailable(Utc::now(), "capture stopped");
+            Self::terminate_child(session.child);
+        }
+    }
+
+    /// Records `status` as the provider's current status and returns it —
+    /// collapses `start()`'s repeated "set status, clone, return" early-out
+    /// pattern into one call per failure site.
+    fn fail(&self, status: ProviderStatus) -> ProviderStatus {
+        *self.status.lock().unwrap() = status.clone();
+        status
+    }
+}
+
+/// Writes `new_status` only if `generation` still matches `my_generation` —
+/// see `MitmproxyTrafficProvider::generation`'s doc comment. Guards every
+/// status write the reader task makes, since `abort()` doesn't take effect
+/// until the task's next await point.
+fn record_status_if_current(
+    status: &Mutex<ProviderStatus>,
+    generation: &AtomicU64,
+    my_generation: u64,
+    new_status: ProviderStatus,
+) {
+    if generation.load(Ordering::SeqCst) == my_generation {
+        *status.lock().unwrap() = new_status;
     }
 }
 
 impl Default for MitmproxyTrafficProvider {
     fn default() -> Self {
         Self {
+            control_lock: Mutex::new(()),
             session: Mutex::new(None),
             flows: Arc::new(Mutex::new(Vec::new())),
             status: Arc::new(Mutex::new(ProviderStatus::unavailable(
                 Utc::now(),
                 "capture not started",
             ))),
+            generation: Arc::new(AtomicU64::new(0)),
         }
     }
 }
@@ -294,39 +360,28 @@ fn parse_ipc_line(line: &str, pid: u32) -> Option<CapturedFlow> {
 
 impl TrafficProvider for MitmproxyTrafficProvider {
     fn start(&self, pid: u32) -> ProviderStatus {
+        let _guard = self.control_lock.lock().unwrap();
         let now = Utc::now();
-        self.stop();
+        self.stop_locked();
 
         let temp_dir = match tempfile::Builder::new().prefix("pni-traffic-").tempdir() {
             Ok(d) => d,
-            Err(e) => {
-                let status = ProviderStatus::transient_failure(now, format!("temp dir: {e}"));
-                *self.status.lock().unwrap() = status.clone();
-                return status;
-            }
+            Err(e) => return self.fail(ProviderStatus::transient_failure(now, format!("temp dir: {e}"))),
         };
         let addon_path = temp_dir.path().join("mitm_addon.py");
         let fields_path = temp_dir.path().join("tier1_redaction_fields.json");
         let socket_path: PathBuf = temp_dir.path().join("ipc.sock");
 
         if let Err(e) = std::fs::write(&addon_path, ADDON_SCRIPT) {
-            let status = ProviderStatus::transient_failure(now, format!("write addon script: {e}"));
-            *self.status.lock().unwrap() = status.clone();
-            return status;
+            return self.fail(ProviderStatus::transient_failure(now, format!("write addon script: {e}")));
         }
         if let Err(e) = std::fs::write(&fields_path, TIER1_FIELDS_JSON) {
-            let status = ProviderStatus::transient_failure(now, format!("write fields json: {e}"));
-            *self.status.lock().unwrap() = status.clone();
-            return status;
+            return self.fail(ProviderStatus::transient_failure(now, format!("write fields json: {e}")));
         }
 
         let listener = match UnixListener::bind(&socket_path) {
             Ok(l) => l,
-            Err(e) => {
-                let status = ProviderStatus::transient_failure(now, format!("bind IPC socket: {e}"));
-                *self.status.lock().unwrap() = status.clone();
-                return status;
-            }
+            Err(e) => return self.fail(ProviderStatus::transient_failure(now, format!("bind IPC socket: {e}"))),
         };
 
         let mut child = match Command::new("mitmdump")
@@ -345,10 +400,10 @@ impl TrafficProvider for MitmproxyTrafficProvider {
         {
             Ok(c) => c,
             Err(e) => {
-                let status =
-                    ProviderStatus::unavailable(now, format!("spawn mitmdump: {e} — is mitmproxy installed?"));
-                *self.status.lock().unwrap() = status.clone();
-                return status;
+                return self.fail(ProviderStatus::unavailable(
+                    now,
+                    format!("spawn mitmdump: {e} — is mitmproxy installed?"),
+                ))
             }
         };
 
@@ -374,19 +429,30 @@ impl TrafficProvider for MitmproxyTrafficProvider {
         *self.status.lock().unwrap() =
             ProviderStatus::transient_failure(now, "waiting for helper process to connect");
 
+        // Captured now (after `stop_locked` above, which bumps this on any
+        // previous session) so every status write this session's reader
+        // task makes below can tell whether it's since been superseded by
+        // a later `stop()`/`start()` — see the `generation` field's doc
+        // comment.
+        let my_generation = self.generation.load(Ordering::SeqCst);
         let flows = self.flows.clone();
         let status = self.status.clone();
+        let generation = self.generation.clone();
         let reader_task = tokio::spawn(async move {
             let stream = match listener.accept().await {
                 Ok((s, _addr)) => s,
                 Err(e) => {
                     eprintln!("traffic provider: IPC accept failed: {e}");
-                    *status.lock().unwrap() =
-                        ProviderStatus::unavailable(Utc::now(), format!("IPC accept failed: {e}"));
+                    record_status_if_current(
+                        &status,
+                        &generation,
+                        my_generation,
+                        ProviderStatus::unavailable(Utc::now(), format!("IPC accept failed: {e}")),
+                    );
                     return;
                 }
             };
-            *status.lock().unwrap() = ProviderStatus::observed(Utc::now());
+            record_status_if_current(&status, &generation, my_generation, ProviderStatus::observed(Utc::now()));
             let mut lines = BufReader::new(stream).lines();
             loop {
                 match lines.next_line().await {
@@ -397,16 +463,22 @@ impl TrafficProvider for MitmproxyTrafficProvider {
                     }
                     Ok(None) => {
                         // addon closed the connection (mitmdump exited)
-                        *status.lock().unwrap() = ProviderStatus::transient_failure(
-                            Utc::now(),
-                            "mitmdump exited (IPC connection closed)",
+                        record_status_if_current(
+                            &status,
+                            &generation,
+                            my_generation,
+                            ProviderStatus::transient_failure(Utc::now(), "mitmdump exited (IPC connection closed)"),
                         );
                         break;
                     }
                     Err(e) => {
                         eprintln!("traffic provider: IPC read error: {e}");
-                        *status.lock().unwrap() =
-                            ProviderStatus::transient_failure(Utc::now(), format!("IPC read error: {e}"));
+                        record_status_if_current(
+                            &status,
+                            &generation,
+                            my_generation,
+                            ProviderStatus::transient_failure(Utc::now(), format!("IPC read error: {e}")),
+                        );
                         break;
                     }
                 }
@@ -423,16 +495,8 @@ impl TrafficProvider for MitmproxyTrafficProvider {
     }
 
     fn stop(&self) {
-        if let Some(session) = self.session.lock().unwrap().take() {
-            session.reader_task.abort();
-            // `abort()` cancels the reader task at its next await point --
-            // it never reaches its own exit-path status updates, so this
-            // is the only place a deliberate stop gets reflected in
-            // `status()` rather than the task's last update lingering
-            // (e.g. still `Observed`) after capture has actually ended.
-            *self.status.lock().unwrap() = ProviderStatus::unavailable(Utc::now(), "capture stopped");
-            Self::terminate_child(session.child);
-        }
+        let _guard = self.control_lock.lock().unwrap();
+        self.stop_locked();
     }
 
     fn take_flows(&self) -> Vec<CapturedFlow> {
@@ -487,20 +551,51 @@ mod tests {
             // spawn wouldn't exercise the same shutdown path a real
             // session does.
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+            // The exact mitmdump pid, checked precisely below -- a
+            // machine-wide `pgrep -f mitmdump` name match would both miss
+            // whether *this* process actually exited and could
+            // false-positive/flake on an unrelated mitmdump session
+            // already running on the same machine.
+            let mitmdump_pid = provider
+                .session
+                .lock()
+                .unwrap()
+                .as_ref()
+                .and_then(|s| s.child.id())
+                .expect("session must have a live child pid right after a clean start");
+
             provider.stop();
             // `stop()` now blocks (via `terminate_child`) until the child
             // has actually exited or been force-killed, so nothing further
             // to wait for here -- that's exactly the guarantee under test.
+
+            assert!(
+                !pid_is_alive(mitmdump_pid),
+                "expected mitmdump pid {mitmdump_pid} to be gone after stop()"
+            );
         }
 
-        let output = std::process::Command::new("pgrep").arg("-f").arg("mitmdump").output();
+        // Best-effort, in addition to the precise per-pid check above: the
+        // `Mitmproxy Redirector.app` helper is the child gap 3/6 was
+        // actually about (`SIGKILL` never gave it a chance to clean up
+        // after itself) -- `SIGTERM` reaching mitmdump doesn't guarantee it
+        // tears this down in time, so check for it directly rather than
+        // trusting that mitmdump's own exit implies its child is gone too.
+        let output = std::process::Command::new("pgrep").arg("-f").arg("Mitmproxy Redirector").output();
         if let Ok(out) = output {
             let leftover = String::from_utf8_lossy(&out.stdout);
             assert!(
                 leftover.trim().is_empty(),
-                "expected no leftover mitmdump processes after stop(), found pid(s): {leftover}"
+                "expected no leftover Mitmproxy Redirector process after stop(), found pid(s): {leftover}"
             );
         }
+    }
+
+    /// SAFETY: signal `0` only performs existence/permission checks -- it
+    /// never actually signals `pid`.
+    fn pid_is_alive(pid: u32) -> bool {
+        unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
     }
 
     /// Phase 0.3 code-review gap 4/6 (`docs/[9] TODO.md`): `status()` must

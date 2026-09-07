@@ -27,7 +27,7 @@ pub fn run() {
         Box::new(SysinfoProcessProvider::new()),
         Box::new(NetstatSocketProvider),
         Arc::new(ReverseDnsProvider),
-        Box::new(MitmproxyTrafficProvider::default()),
+        Arc::new(MitmproxyTrafficProvider::default()),
     );
 
     tauri::Builder::default()

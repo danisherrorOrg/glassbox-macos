@@ -88,28 +88,42 @@ impl DNSProvider for MockDnsProvider {
 #[derive(Default)]
 pub struct MockTrafficProvider {
     flows: Mutex<Vec<CapturedFlow>>,
+    // Tracks `start`/`stop` calls so `status()` reflects the mock's actual
+    // lifecycle instead of always claiming `Observed` — a test exercising
+    // `ObservationEngine::traffic_status()` against this mock (rather than
+    // just `poll_traffic_flows`) needs it to distinguish a real start/stop
+    // from a scripted-but-never-started session.
+    running: Mutex<bool>,
 }
 
 impl MockTrafficProvider {
     pub fn with_flows(flows: Vec<CapturedFlow>) -> Self {
         Self {
             flows: Mutex::new(flows),
+            running: Mutex::new(false),
         }
     }
 }
 
 impl TrafficProvider for MockTrafficProvider {
     fn start(&self, _pid: u32) -> ProviderStatus {
+        *self.running.lock().unwrap() = true;
         ProviderStatus::observed(chrono::Utc::now())
     }
 
-    fn stop(&self) {}
+    fn stop(&self) {
+        *self.running.lock().unwrap() = false;
+    }
 
     fn take_flows(&self) -> Vec<CapturedFlow> {
         std::mem::take(&mut self.flows.lock().unwrap())
     }
 
     fn status(&self) -> ProviderStatus {
-        ProviderStatus::observed(chrono::Utc::now())
+        if *self.running.lock().unwrap() {
+            ProviderStatus::observed(chrono::Utc::now())
+        } else {
+            ProviderStatus::unavailable(chrono::Utc::now(), "capture not started")
+        }
     }
 }
