@@ -1,3 +1,11 @@
+// This crate calls macOS-only libproc/proc_pidinfo FFI unconditionally
+// (providers/system.rs, providers/process.rs) — a non-macOS build would
+// otherwise fail with opaque linker errors far from the actual cause.
+// See docs/PERMISSIONS_AND_PLATFORM.md: this project is macOS-only by
+// design, not an oversight that happens to work only on one platform.
+#[cfg(not(target_os = "macos"))]
+compile_error!("this crate only supports macOS — see docs/PERMISSIONS_AND_PLATFORM.md");
+
 mod commands;
 mod engine;
 mod models;
