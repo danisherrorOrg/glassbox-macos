@@ -33,6 +33,10 @@ This splits into two distinct guarantees, kept separate rather than treated as o
 
 Viewing, inspecting, correlating, analyzing, timelining, and exporting — read paths only.
 
+### One clarification about the capture mechanism
+
+HTTPS observation (Phase 0.3+) uses a local MITM (man-in-the-middle) proxy — mitmproxy, per `docs/ARCHITECTURE.md` — which by construction terminates the target process's TLS connection and re-originates each request to the real server, forwarding it onward unchanged. The app therefore sits in the path of the traffic it observes; it does not originate, modify, reorder, replay, or withhold any of it, and forwarding is not a capability exposed to the user in any form — it's an unavoidable mechanical property of how local TLS interception works, not a feature. This also requires the user to trust a locally-generated CA (certificate authority) certificate into their trust store once — an explicit, reversible, user-consented step. See `docs/PRIVACY_AND_SECURITY.md` for where that certificate lives and how to remove it. None of this changes either guarantee above: the app still never modifies the target process, and it still never modifies, replays, or injects the traffic it observes — it just does the observing from a position in the path rather than a passive tap, which is worth stating plainly rather than leaving a reader to infer it from the architecture doc alone.
+
 ## 3. Core user workflow
 
 1. **Process list** — searchable table of running processes (name, PID, connection count, status).
@@ -56,7 +60,7 @@ The product should never collapse "I can't see the payload" into "I can't see an
 
 An earlier version of this table said Levels 2–3 were "always available," which quietly contradicted the rest of this document set — socket visibility can legitimately come back `permission_denied`, `unavailable`, or `stale` (see `docs/OBSERVATION_CONTRACT.md`). The product attempts Levels 1–3 wherever technically and legitimately available and explicitly reports when they're not — this table now says that instead of overclaiming it.
 
-A pinned-cert or non-HTTP connection still shows Levels 1–3 in full — "HTTPS, connected, bytes sent/received, contents unavailable" is a legitimate and useful answer, not a failure state. The precise status vocabulary behind this (`observed`/`unavailable`/`permission_denied`/`unsupported`/`stale`/`unmatched`) is defined in `docs/OBSERVATION_CONTRACT.md`.
+A pinned-cert or non-HTTP connection still shows Levels 1–3 in full — "HTTPS, connected, bytes sent/received, contents unavailable" is a legitimate and useful answer, not a failure state. The precise status vocabulary behind this is defined in `docs/OBSERVATION_CONTRACT.md` — see that document for the authoritative list rather than repeating it here, where it's already drifted out of sync once.
 
 ### Observation Capabilities panel
 
@@ -74,6 +78,8 @@ HTTPS payload                 ⚠ Limited
 HTTP body                     ⚠ Limited
 Raw packet data               ✕
 ```
+
+This mock's rows correspond to the fields of `ObservationCapabilities` in `docs/DATA_MODEL.md`, which is the authoritative field list (implemented in Phase 0.3, panel UI built in Phase 1.0) — treat that document as canonical if the two ever appear to disagree, rather than updating one from the other by hand.
 
 ## 4. Where the rest of the design lives
 

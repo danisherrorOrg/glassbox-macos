@@ -29,7 +29,21 @@ This is not a style preference — it's the difference between a session file on
 ## The two redaction checkpoints (see `ARCHITECTURE.md` and `DATA_MODEL.md`)
 
 1. **Capture-time redaction (highly sensitive only)** — irreversible, applied before a `RawHTTPRequest`/`RawHTTPResponse` object even exists for these fields. Nothing downstream — display, storage, export, "show anyway" — can ever see these values, because they were never captured in retrievable form.
-2. **Persistence/export redaction (potentially sensitive tier)** — mandatory, irreversible, applied to everything written to the Session Store or any export file, regardless of what's currently toggled on screen in the live UI. A "show anyway" preference reveals the in-memory `Raw*` object for display only and must never propagate to disk.
+
+   **Where this actually runs:** capture physically happens inside the Python mitmproxy helper addon (`ARCHITECTURE.md`), not the Rust core, so tier-1 redaction runs **inside that addon**, before any value crosses the helper→core IPC socket. If it ran in the Rust core instead, the raw value would necessarily have existed in the helper's memory and traveled over the IPC socket first — contradicting "never exists in raw form anywhere, including in memory." The helper and the Rust core share the same field-name list (the starter list below), distributed as a single data file both processes read — neither maintains its own separate copy, so the two can't drift apart.
+
+2. **Persistence/export redaction (potentially sensitive tier)** — mandatory, irreversible, applied to everything written to the Session Store or any export file, regardless of what's currently toggled on screen in the live UI. A "show anyway" preference (via the `reveal_raw(request_id)` command — `DATA_MODEL.md`) reveals the in-memory `Raw*` object for display only and must never propagate to disk.
+
+## Starter sensitive-field list (tier 1, capture-time, irreversible)
+
+The list `Phase 0.3`'s addon and `Phase 0.4`'s `Redactor` both start from — matching is case-insensitive substring against the leaf key name only, never the value, and applies to header names and to body/query keys (including nested JSON, matched by leaf key regardless of path depth):
+
+- **Header names:** `authorization`, `proxy-authorization`, `x-api-key`, `api-key`, `x-auth-token`, `x-access-token`, `authentication`
+- **Body/query keys:** `password`, `passwd`, `secret`, `token`, `api_key`, `apikey`, `access_key`, `private_key`, `client_secret`, `refresh_token`, `session_id`, `credential`
+
+**Tier 2 (potentially sensitive, reversible in-session):** `cookie`, `set-cookie`, and full request/response bodies and query strings — these get the display-transform/persistence-transform split above, not the irreversible tier-1 treatment.
+
+This list is user-extendable (per `TODO.md` Phase 0.4's "configurable list") but never user-shrinkable below the baseline above — a user can add field names to redact, never remove ones already on this list.
 
 ## Tauri/React-specific rules
 
@@ -44,9 +58,10 @@ The FastAPI-era stack (`DECISIONS.md` ADR-009) required binding a server to `127
 - **Sessions are always stored in redacted form. This is an unconditional invariant, not a default with a hypothetical opt-out.** An earlier version of this document left the door open to "raw storage, if ever offered, as an explicit opt-in" — that phrasing is dropped. It sat awkwardly next to the rest of this document's absolute language ("never persisted," "no reveal path"), nobody has asked for a raw-storage feature, and leaving the possibility documented costs nothing to remove and something real to keep: raw in memory, never disk, with no exception clause for a future feature to grow into.
 - Potentially-sensitive raw data (`RawHTTPRequest`/`RawHTTPResponse` in `DATA_MODEL.md`) may be retained transiently in memory during a live session only — never persisted, and destroyed (not just dereferenced) when the session ends. See `DATA_MODEL.md`'s lifetime rule for the memory-budget and eviction requirements this implies.
 - Highly-sensitive fields are never retained raw anywhere, including in memory — see the classification table above.
-- Maximum body-preview size and header/session memory limits are enforced at capture time (`DATA_MODEL.md`'s `body_preview` fields are truncated, not full bodies) — oversized captures are truncated safely rather than held in full.
+- Maximum body-preview size and header/session memory limits are enforced at capture time (`DATA_MODEL.md`'s `body_preview` fields are truncated, not full bodies) — oversized captures are truncated safely rather than held in full. **The size limit itself is 8 KiB (8192 bytes) per `body_preview`**, provisional — this is the number Phase 0.4 actually enforces; Phase 0.6 revisits it only as part of the broader memory-budget/eviction-policy design (retained-object caps, session-level budget), not as a re-litigation of this specific number.
 - Export (session as JSON, single flow as text) goes through the exact same mandatory redaction path as storage. There is no export code path that bypasses the Redactor.
 - Document where session files live on disk once Phase 0.6 implements storage, so a user can find and delete them without hunting.
+- **CA certificate:** HTTPS observation (Phase 0.3+) requires the user to trust a locally-generated mitmproxy CA certificate once (see `process-network-inspector-report.md` §2's clarification on the capture mechanism). Document exactly where mitmproxy stores this certificate on disk and the exact steps to remove it (both from the system trust store and the file itself) once Phase 0.3 actually generates one — a user should be able to fully undo this without hunting, the same principle already applied to session files above.
 
 ## What this document explicitly forbids, permanently
 
