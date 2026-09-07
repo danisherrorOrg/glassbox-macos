@@ -1239,6 +1239,7 @@ mod engine_tests {
             },
             response: None,
             evidence: evidence(Some(810), "93.184.216.34", 443),
+            capture_error: None,
         };
         let traffic = crate::tests::MockTrafficProvider::with_flows(vec![scripted_flow]);
         let mut engine = ObservationEngine::new(
@@ -1501,7 +1502,7 @@ mod engine_tests {
                 // "see the raw flow show up in a debug log" — the actual
                 // Phase 0.3 demo checkpoint wording (docs/[9] TODO.md).
                 println!(
-                    "DEBUG LOG: {} {}{} -> matched connection: {:?} (evidence: pid={:?} remote={:?}:{:?})",
+                    "DEBUG LOG: {} {}{} -> matched connection: {:?} (evidence: pid={:?} remote={:?}:{:?}, capture_error={:?})",
                     flow.request.method,
                     flow.request.host,
                     flow.request.path,
@@ -1509,6 +1510,7 @@ mod engine_tests {
                     flow.evidence.pid,
                     flow.evidence.remote_addr,
                     flow.evidence.remote_port,
+                    flow.capture_error,
                 );
                 assert_eq!(
                     flow.evidence.pid,

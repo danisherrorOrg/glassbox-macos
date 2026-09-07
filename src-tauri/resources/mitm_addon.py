@@ -224,15 +224,26 @@ class ObservationAddon:
             "request": self._build_request(flow),
             "response": self._build_response(flow),
             "evidence": self._build_evidence(flow),
+            "error": None,
         })
 
     def error(self, flow):
         if flow.request is None:
             return
+        # mitmproxy hands us the actual reason here (e.g. a self-signed
+        # upstream cert rejected by the deliberate no-`--ssl-insecure`
+        # policy, a reset connection, an unsupported protocol) -- forward
+        # it instead of discarding it. Without this, a real capture
+        # failure and "no response yet" were indistinguishable on the
+        # Rust side: both showed up as `response: null` with zero
+        # explanation, found via real-data testing against a real
+        # self-signed HTTPS request (docs/[9] TODO.md).
+        error_message = flow.error.msg if flow.error is not None else "unknown capture error"
         self.ipc.send({
             "request": self._build_request(flow),
             "response": None,
             "evidence": self._build_evidence(flow),
+            "error": error_message,
         })
 
 

@@ -52,6 +52,16 @@ pub struct CapturedFlow {
     pub request: RawHTTPRequest,
     pub response: Option<RawHTTPResponse>,
     pub evidence: CorrelationEvidence,
+    /// Why `response` is `None`, when it's known -- e.g. a rejected
+    /// self-signed upstream cert (this project deliberately never passes
+    /// `--ssl-insecure`, so this fires routinely against non-CA-signed
+    /// HTTPS), a reset connection, or an unsupported protocol. `None`
+    /// here does *not* mean "no error" -- `response` can also be `None`
+    /// while a flow is simply still in progress. This exists so a real
+    /// capture failure is never silently indistinguishable from "nothing
+    /// happened yet", found via real-data testing against a real
+    /// self-signed HTTPS request (docs/[9] TODO.md).
+    pub capture_error: Option<String>,
 }
 
 pub trait TrafficProvider: Send + Sync {
@@ -295,6 +305,11 @@ struct IpcEvent {
     request: IpcRequest,
     response: Option<IpcResponse>,
     evidence: IpcEvidence,
+    /// `#[serde(default)]`: only the addon's `error()` hook ever sends a
+    /// non-`None` value here; defaulting keeps this forward-compatible
+    /// with any line that predates this field rather than failing to parse.
+    #[serde(default)]
+    error: Option<String>,
 }
 
 fn unix_time_to_datetime(secs: f64) -> DateTime<Utc> {
@@ -355,6 +370,7 @@ fn parse_ipc_line(line: &str, pid: u32) -> Option<CapturedFlow> {
         request,
         response,
         evidence,
+        capture_error: event.error,
     })
 }
 
@@ -511,6 +527,46 @@ impl TrafficProvider for MitmproxyTrafficProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Found via real-data testing against a real self-signed HTTPS
+    /// request: the addon's `error()` hook used to discard `flow.error.msg`
+    /// entirely, so a real capture failure and "no response yet" were
+    /// indistinguishable on this side of the IPC boundary (docs/[9]
+    /// TODO.md). No real `mitmdump`/subprocess needed here -- this is a
+    /// pure parsing test against the exact line shape the addon's `error()`
+    /// hook now sends.
+    #[test]
+    fn parse_ipc_line_propagates_capture_error() {
+        let line = r#"{
+            "request": {"method": "GET", "host": "example.com", "path": "/", "headers": {}, "body": null, "timestamp": 0.0},
+            "response": null,
+            "evidence": {"protocol": "tcp", "local_addr": null, "local_port": null, "remote_addr": "93.184.216.34", "remote_port": 443, "hostname": "example.com", "timestamp": 0.0, "source": "mitmproxy-local"},
+            "error": "TLS handshake failed: certificate verify failed"
+        }"#;
+
+        let flow = parse_ipc_line(line, 42).expect("valid IPC line must parse");
+        assert!(flow.response.is_none());
+        assert_eq!(
+            flow.capture_error.as_deref(),
+            Some("TLS handshake failed: certificate verify failed")
+        );
+    }
+
+    /// The success path (`response()` hook) always sends `"error": null`
+    /// explicitly, but a line missing the key entirely (e.g. from before
+    /// this field existed) must still parse, defaulting to `None` rather
+    /// than failing.
+    #[test]
+    fn parse_ipc_line_defaults_capture_error_when_field_absent() {
+        let line = r#"{
+            "request": {"method": "GET", "host": "example.com", "path": "/", "headers": {}, "body": null, "timestamp": 0.0},
+            "response": null,
+            "evidence": {"protocol": "tcp", "local_addr": null, "local_port": null, "remote_addr": "93.184.216.34", "remote_port": 443, "hostname": "example.com", "timestamp": 0.0, "source": "mitmproxy-local"}
+        }"#;
+
+        let flow = parse_ipc_line(line, 42).expect("valid IPC line without the error field must still parse");
+        assert_eq!(flow.capture_error, None);
+    }
 
     /// Real, not mocked: exercises the actual `stop()`/`start()` race from
     /// Phase 0.3 code-review gap 3/6 (`docs/[9] TODO.md`) against a real
