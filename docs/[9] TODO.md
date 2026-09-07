@@ -44,6 +44,7 @@ gate run against this document set, separate from and prior to the checklist bel
 - [ ] Implement the `discovered` vs. `active` transition per `docs/DATA_MODEL.md`: `discovered` on first sight, `active` on a second consecutive successful match or an observed `ESTABLISHED` state (including `LISTEN` sockets, which follow the same rule)
 - [ ] Test connection matching against reused local ports and rapidly closed/reopened connections
 - [ ] Ensure one unavailable/failing provider is isolated and doesn't take down the whole observation session (surface its status instead) — and specifically, ensure a `transient_failure` from `SocketProvider` never gets misread as "all connections disappeared" (see the 4th mandatory test in `docs/TESTING_STRATEGY.md`)
+- [ ] The Engine retains exited processes and their terminated connections in `get_processes`/`get_connections` output for the rest of the session, rather than removing them once `process_state == Exited`/`lifecycle_state == Closed` (see the 1st mandatory test in `docs/TESTING_STRATEGY.md`, which asserts on this)
 
 **Concurrency (`tokio`, not asyncio or Swift concurrency)**
 

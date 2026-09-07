@@ -53,7 +53,7 @@ Exercise the full chain end to end within the Rust core, without a webview:
 
 ```
 NetworkTestTarget → SocketProvider → Observation Engine → expected NetworkConnection
-NetworkTestTarget (HTTP) → TrafficProvider → Engine correlation → expected Flow, redacted
+NetworkTestTarget (HTTP) → TrafficProvider → Engine correlation → expected HTTPRequest/HTTPResponse attached to the right NetworkConnection (via Flow from Phase 0.5 onward), redacted
 ```
 
 This is the layer that unit tests per provider cannot substitute for — a provider can be individually correct while the Engine still mis-correlates its output.
