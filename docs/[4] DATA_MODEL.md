@@ -57,10 +57,12 @@ Exactly what `ProcessProvider` saw in one call — no status judgment, same disc
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | pid | u32 | yes | |
-| name | String | yes | |
-| executable_path | String | yes | |
+| name | String | yes | derived from `executable_path`'s basename, not the kernel's `pbi_comm` field directly — see the note below |
+| executable_path | Option\<String\> | no | `None` when unobtainable (e.g. `pid 0`/`kernel_task`) — a real case found during Phase 0.1 implementation, not originally anticipated when this table first shipped as `String`/required; never rendered as `""` |
 | cpu_percent | f32 | no | best-effort |
 | memory_bytes | u64 | no | best-effort |
+
+**Known macOS kernel limitation — `name` truncation:** `sysinfo::Process::name()` reads the kernel's `pbi_comm` field (`proc_pidinfo`'s `PROC_PIDTBSDINFO`), which macOS truncates to `MAXCOMLEN` (16 bytes, 15 usable characters) — e.g. "Google Chrome Helper" comes back as "Google Chrome H". This isn't a `sysinfo` bug or something more `libproc` FFI work fixes; it's the actual data the kernel stores for that field. `ProcessProvider` works around it by deriving `name` from `executable_path`'s basename instead, whenever the path is known — the full, correct name in practice, since basenames aren't subject to this limit. `name` only falls back to the (possibly-truncated) kernel value when `executable_path` itself is `None`.
 
 ## `ProcessSnapshot` (provider-owned)
 
@@ -79,8 +81,8 @@ Built from a `ProcessObservation` plus Engine-derived judgment. A provider never
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | pid | u32 | yes | copied from the observation |
-| name | String | yes | |
-| executable_path | String | yes | |
+| name | String | yes | copied from the observation (already basename-derived where possible — see `ProcessObservation`'s note) |
+| executable_path | Option\<String\> | no | copied from the observation; `None` is a real, legitimate value here — see `ProcessObservation` |
 | cpu_percent | f32 | no | |
 | memory_bytes | u64 | no | |
 | process_state | enum { Running, Exited } | yes | Engine-derived — renamed from `status` to free that name for the standard `ObservationStatus` meaning below, matching `NetworkConnection.lifecycle_state`'s naming |
