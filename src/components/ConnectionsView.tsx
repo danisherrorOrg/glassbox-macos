@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
-import { getConnections } from "../api/inspector";
-import type { NetworkConnection } from "../api/types";
+import {
+  getConnections,
+  getHostnames,
+  onConnectionsUpdated,
+  onHostnamesUpdated,
+} from "../api/inspector";
+import type { NetworkConnection, ResolvedHostname } from "../api/types";
 import { StatusBadge } from "./StatusBadge";
 import type { ViewState } from "./StatusBadge";
 import "./ProcessList.css";
@@ -12,10 +17,16 @@ function formatBytes(n: number | null): string {
   return n === null ? "not reported" : n.toLocaleString();
 }
 
-export function ConnectionsView({ pid }: { pid: number }) {
+export function ConnectionsView({ pid, isMonitoring }: { pid: number; isMonitoring: boolean }) {
   const [viewState, setViewState] = useState<ViewState>("loading");
   const [reason, setReason] = useState<string | null>(null);
   const [connections, setConnections] = useState<NetworkConnection[]>([]);
+  const [hostnames, setHostnames] = useState<Map<string, ResolvedHostname>>(new Map());
+
+  async function refreshHostnames() {
+    const envelope = await getHostnames(pid);
+    setHostnames(new Map((envelope.data ?? []).map((h) => [h.connection_id, h])));
+  }
 
   async function refresh() {
     setViewState("loading");
@@ -23,12 +34,39 @@ export function ConnectionsView({ pid }: { pid: number }) {
     setViewState(envelope.status.state);
     setReason(envelope.status.reason);
     setConnections(envelope.data ?? []);
+    refreshHostnames();
   }
 
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pid]);
+
+  // Live updates only while this exact process is the one being monitored
+  // — the backend only ever emits for a single monitored pid at a time.
+  useEffect(() => {
+    if (!isMonitoring) return;
+
+    let unlistenConnections: (() => void) | undefined;
+    let unlistenHostnames: (() => void) | undefined;
+
+    onConnectionsUpdated((envelope) => {
+      setViewState(envelope.status.state);
+      setReason(envelope.status.reason);
+      setConnections(envelope.data ?? []);
+    }).then((un) => {
+      unlistenConnections = un;
+    });
+    onHostnamesUpdated(refreshHostnames).then((un) => {
+      unlistenHostnames = un;
+    });
+
+    return () => {
+      unlistenConnections?.();
+      unlistenHostnames?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMonitoring, pid]);
 
   return (
     <div className="process-list">
@@ -67,26 +105,33 @@ export function ConnectionsView({ pid }: { pid: number }) {
                 </td>
               </tr>
             ) : (
-              connections.map((c) => (
-                <tr key={c.connection_id}>
-                  <td>{c.protocol.toUpperCase()}</td>
-                  <td>
-                    {c.local_addr}:{c.local_port}
-                  </td>
-                  <td>
-                    {c.remote_addr !== null && c.remote_port !== null
-                      ? `${c.remote_addr}:${c.remote_port}`
-                      : "—"}
-                  </td>
-                  <td>{c.state}</td>
-                  <td>{formatBytes(c.bytes_sent)}</td>
-                  <td>{formatBytes(c.bytes_received)}</td>
-                  <td>{c.lifecycle_state}</td>
-                  <td>
-                    <StatusBadge state={c.status.state} reason={c.status.reason} />
-                  </td>
-                </tr>
-              ))
+              connections.map((c) => {
+                const hostname = hostnames.get(c.connection_id);
+                return (
+                  <tr key={c.connection_id}>
+                    <td>{c.protocol.toUpperCase()}</td>
+                    <td>
+                      {c.local_addr}:{c.local_port}
+                    </td>
+                    <td>
+                      {c.remote_addr !== null && c.remote_port !== null ? (
+                        <span title={c.remote_addr}>
+                          {hostname ? `${hostname.hostname}:${c.remote_port}` : `${c.remote_addr}:${c.remote_port}`}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td>{c.state}</td>
+                    <td>{formatBytes(c.bytes_sent)}</td>
+                    <td>{formatBytes(c.bytes_received)}</td>
+                    <td>{c.lifecycle_state}</td>
+                    <td>
+                      <StatusBadge state={c.status.state} reason={c.status.reason} />
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

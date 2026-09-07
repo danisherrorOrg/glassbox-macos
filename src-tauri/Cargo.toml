@@ -25,7 +25,8 @@ chrono = { version = "0.4.45", features = ["serde"] }
 sysinfo = "0.39.6"
 netstat2 = "0.11.2"
 libc = "0.2.189"
-tokio = { version = "1.53.1", features = ["sync"] }
+tokio = { version = "1.53.1", features = ["sync", "time"] }
+dns-lookup = "4.0.1"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

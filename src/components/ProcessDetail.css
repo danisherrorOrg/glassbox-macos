@@ -3,8 +3,50 @@
   width: 100%;
 }
 
+.process-detail__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75em;
+  margin-bottom: 0.5em;
+}
+
 .process-detail__heading {
-  margin: 0 0 0.5em;
+  margin: 0;
+}
+
+.process-detail__pid {
+  color: #6b7280;
+  font-weight: 400;
+}
+
+.process-detail__monitor-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+}
+
+.process-detail__note {
+  color: #b45309;
+  font-size: 0.85em;
+}
+
+.process-detail__exited-banner {
+  background: rgba(127, 29, 29, 0.08);
+  color: #7f1d1d;
+  border: 1px solid rgba(127, 29, 29, 0.25);
+  border-radius: 6px;
+  padding: 0.5em 0.8em;
+  margin-bottom: 1em;
+}
+
+@media (prefers-color-scheme: dark) {
+  .process-detail__exited-banner {
+    background: rgba(254, 202, 202, 0.08);
+    color: #fecaca;
+    border-color: rgba(254, 202, 202, 0.25);
+  }
 }
 
 .process-detail__tabs {

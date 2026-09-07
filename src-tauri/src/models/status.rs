@@ -80,24 +80,35 @@ pub struct ObservationStatus {
     pub provider: Option<Provider>,
 }
 
-/// Phase 0.1's flat staleness threshold (`OBSERVATION_CONTRACT.md`) — no
-/// configurable polling interval exists yet this phase.
-const STALE_THRESHOLD_SECONDS: i64 = 30;
+/// Phase 0.1's flat staleness threshold (`OBSERVATION_CONTRACT.md`) — used
+/// until live monitoring (Phase 0.2) has ever configured a real poll
+/// interval for this session.
+pub const PHASE_0_1_STALE_THRESHOLD_SECONDS: i64 = 30;
+
+/// `OBSERVATION_CONTRACT.md`'s staleness formula once a poll interval is
+/// configured: `now - last_successful_at > 3 × the configured poll interval`.
+pub fn polling_stale_threshold(poll_interval_ms: u64) -> Duration {
+    Duration::milliseconds(3 * poll_interval_ms as i64)
+}
 
 impl ObservationStatus {
     /// Wraps a fresh `ProviderStatus` into an `ObservationStatus`, given the
     /// object's previous status (if any) to carry forward `last_successful_at`
     /// and to decide whether a non-`Observed` result has aged into `Stale`.
+    /// `stale_threshold` is `docs/OBSERVATION_CONTRACT.md`'s formula: a flat
+    /// 30s in Phase 0.1, `3 × poll interval` once live monitoring has
+    /// configured one (`polling_stale_threshold`).
     ///
     /// This is the one place that implements `OBSERVATION_CONTRACT.md`'s
     /// staleness rule and satisfies `TESTING_STRATEGY.md`'s 4th mandatory
     /// test: a failed poll never manufactures fresh data, and only ages a
     /// carried-forward failure into `Stale` once `last_successful_at` is
-    /// more than 30s in the past.
+    /// older than that threshold.
     pub fn from_provider(
         provider: &ProviderStatus,
         previous: Option<&ObservationStatus>,
         source: Provider,
+        stale_threshold: Duration,
     ) -> Self {
         let now = provider.observed_at;
         let previous_success_at = previous.and_then(|p| p.last_successful_at);
@@ -113,7 +124,7 @@ impl ObservationStatus {
         }
 
         let aged_past_threshold = previous_success_at
-            .map(|t| now - t > Duration::seconds(STALE_THRESHOLD_SECONDS))
+            .map(|t| now - t > stale_threshold)
             .unwrap_or(false);
 
         let state = if aged_past_threshold {

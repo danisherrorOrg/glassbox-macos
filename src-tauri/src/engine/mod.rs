@@ -8,14 +8,16 @@
 //! mechanism.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
-use chrono::Utc;
+use chrono::{DateTime, Duration, Utc};
 
 use crate::models::{
-    Envelope, LifecycleState, NetworkConnection, ObservationState, ObservationStatus,
-    ProcessInfo, ProcessState, Protocol, Provider, ProviderState,
+    polling_stale_threshold, Envelope, HostnameObservation, LifecycleState, NetworkConnection,
+    ObservationState, ObservationStatus, ProcessInfo, ProcessState, Protocol, Provider,
+    ProviderState, ResolvedHostname, TrafficEvent, TrafficEventType, PHASE_0_1_STALE_THRESHOLD_SECONDS,
 };
-use crate::providers::{ProcessProvider, SocketProvider};
+use crate::providers::{DNSProvider, ProcessProvider, SocketProvider};
 
 /// Engine-tracked record for one process — the subset of `ProcessInfo`
 /// that's persisted across refreshes; `status`/`active_connection_count`
@@ -53,11 +55,29 @@ fn observation_tuple(
 pub struct ObservationEngine {
     process_provider: Box<dyn ProcessProvider>,
     socket_provider: Box<dyn SocketProvider>,
+    dns_provider: Arc<dyn DNSProvider>,
     processes: HashMap<u32, TrackedProcess>,
     connections: HashMap<String, NetworkConnection>,
     next_connection_seq: u64,
     process_layer_status: ObservationStatus,
     socket_layer_status: ObservationStatus,
+    /// `None` until live monitoring (Phase 0.2) has configured a real
+    /// interval at least once this session — see `stale_threshold`.
+    poll_interval_ms: Option<u64>,
+    /// `None` = "looked up, no PTR record" (a real, negative result — not
+    /// retried every tick); absent entirely = never looked up yet.
+    hostname_cache: HashMap<String, Option<HostnameObservation>>,
+    dns_in_flight: HashSet<String>,
+    /// Addresses newly seen this refresh that need a lookup — drained by
+    /// `take_pending_dns_lookups` so the async caller can resolve them via
+    /// `spawn_blocking` without holding the engine lock during the call.
+    pending_dns: Vec<String>,
+    /// Full session history, queried by `get_timeline`.
+    timeline: Vec<TrafficEvent>,
+    next_event_seq: u64,
+    /// Drained by `take_pending_events` for live per-tick event emission,
+    /// separate from `timeline` (which never shrinks).
+    pending_events: Vec<TrafficEvent>,
 }
 
 fn not_yet_queried(provider: Provider) -> ObservationStatus {
@@ -74,16 +94,54 @@ impl ObservationEngine {
     pub fn new(
         process_provider: Box<dyn ProcessProvider>,
         socket_provider: Box<dyn SocketProvider>,
+        dns_provider: Arc<dyn DNSProvider>,
     ) -> Self {
         Self {
             process_provider,
             socket_provider,
+            dns_provider,
             processes: HashMap::new(),
             connections: HashMap::new(),
             next_connection_seq: 0,
             process_layer_status: not_yet_queried(Provider::Process),
             socket_layer_status: not_yet_queried(Provider::Socket),
+            poll_interval_ms: None,
+            hostname_cache: HashMap::new(),
+            dns_in_flight: HashSet::new(),
+            pending_dns: Vec::new(),
+            timeline: Vec::new(),
+            next_event_seq: 0,
+            pending_events: Vec::new(),
         }
+    }
+
+    /// `docs/OBSERVATION_CONTRACT.md`'s staleness formula: Phase 0.1's flat
+    /// 30s until live monitoring (`set_poll_interval_ms`) has configured a
+    /// real interval this session, `3 × that interval` after.
+    fn stale_threshold(&self) -> Duration {
+        match self.poll_interval_ms {
+            Some(ms) => polling_stale_threshold(ms),
+            None => Duration::seconds(PHASE_0_1_STALE_THRESHOLD_SECONDS),
+        }
+    }
+
+    /// Called once live monitoring starts (`docs/[9] TODO.md` Phase 0.2).
+    pub fn set_poll_interval_ms(&mut self, ms: u64) {
+        self.poll_interval_ms = Some(ms);
+    }
+
+    fn record_event(&mut self, event_type: TrafficEventType, connection_id: &str, now: DateTime<Utc>) {
+        self.next_event_seq += 1;
+        let event = TrafficEvent {
+            event_id: format!("e-{}", self.next_event_seq),
+            timestamp: now,
+            event_type,
+            connection_id: Some(connection_id.to_string()),
+            request_id: None,
+            response_id: None,
+        };
+        self.timeline.push(event.clone());
+        self.pending_events.push(event);
     }
 
     /// Whether a layer's current status is one that carries data alongside
@@ -105,6 +163,7 @@ impl ObservationEngine {
             &snapshot.status,
             Some(&self.process_layer_status),
             Provider::Process,
+            self.stale_threshold(),
         );
 
         if snapshot.status.state == ProviderState::Observed {
@@ -141,6 +200,7 @@ impl ObservationEngine {
                     p.process_state = ProcessState::Exited;
                 }
                 let now = snapshot.timestamp;
+                let mut newly_closed = Vec::new();
                 for conn in self.connections.values_mut() {
                     if conn.pid == pid && conn.lifecycle_state != LifecycleState::Closed {
                         conn.lifecycle_state = LifecycleState::Closed;
@@ -151,7 +211,11 @@ impl ObservationEngine {
                             reason: None,
                             provider: Some(Provider::Process),
                         };
+                        newly_closed.push(conn.connection_id.clone());
                     }
+                }
+                for id in newly_closed {
+                    self.record_event(TrafficEventType::ConnectionClosed, &id, now);
                 }
             }
         }
@@ -170,6 +234,7 @@ impl ObservationEngine {
             &snapshot.status,
             Some(&self.socket_layer_status),
             Provider::Socket,
+            self.stale_threshold(),
         );
 
         if snapshot.status.state == ProviderState::Observed {
@@ -198,8 +263,14 @@ impl ObservationEngine {
             }
 
             let mut seen_ids: HashSet<String> = HashSet::new();
+            let mut newly_opened: Vec<String> = Vec::new();
+            let mut candidate_addrs: Vec<String> = Vec::new();
 
             for obs in snapshot.observations {
+                if let Some(addr) = &obs.remote_addr {
+                    candidate_addrs.push(addr.clone());
+                }
+
                 let key = observation_tuple(
                     obs.pid,
                     obs.protocol,
@@ -229,6 +300,7 @@ impl ObservationEngine {
                             // transition on its own, regardless of state.
                             if conn.lifecycle_state == LifecycleState::Discovered {
                                 conn.lifecycle_state = LifecycleState::Active;
+                                newly_opened.push(id);
                             }
                         }
                     }
@@ -240,6 +312,9 @@ impl ObservationEngine {
                         } else {
                             LifecycleState::Discovered
                         };
+                        if lifecycle_state == LifecycleState::Active {
+                            newly_opened.push(id.clone());
+                        }
                         seen_ids.insert(id.clone());
                         self.connections.insert(
                             id.clone(),
@@ -264,10 +339,22 @@ impl ObservationEngine {
                 }
             }
 
+            for id in newly_opened {
+                self.record_event(TrafficEventType::ConnectionOpened, &id, now);
+            }
+
+            for addr in candidate_addrs {
+                if !self.hostname_cache.contains_key(&addr) && !self.dns_in_flight.contains(&addr) {
+                    self.dns_in_flight.insert(addr.clone());
+                    self.pending_dns.push(addr);
+                }
+            }
+
             // Previously-tracked, unmatched this round: no positive
             // evidence of closure, so `expired` — never `closed` — per the
             // closed/expired rule. (A `closed` transition only ever
             // happens via confirmed process exit, in `refresh_processes`.)
+            let mut newly_expired: Vec<String> = Vec::new();
             for (id, conn) in self.connections.iter_mut() {
                 if matches!(
                     conn.lifecycle_state,
@@ -275,7 +362,11 @@ impl ObservationEngine {
                 ) && !seen_ids.contains(id)
                 {
                     conn.lifecycle_state = LifecycleState::Expired;
+                    newly_expired.push(id.clone());
                 }
+            }
+            for id in newly_expired {
+                self.record_event(TrafficEventType::ConnectionExpired, &id, now);
             }
         }
         // A non-`observed` snapshot leaves every tracked connection's
@@ -288,6 +379,102 @@ impl ObservationEngine {
 
         self.socket_layer_status = new_status.clone();
         new_status
+    }
+
+    /// Addresses newly seen this refresh that still need a reverse-DNS
+    /// lookup. The caller resolves each via `dns_provider()` (typically in
+    /// a `spawn_blocking` task, since the lookup is a blocking OS call) and
+    /// reports the result back through `record_hostname`, without holding
+    /// the engine lock for the duration of the lookup itself.
+    pub fn take_pending_dns_lookups(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.pending_dns)
+    }
+
+    pub fn dns_provider(&self) -> Arc<dyn DNSProvider> {
+        self.dns_provider.clone()
+    }
+
+    pub fn record_hostname(&mut self, addr: String, observation: Option<HostnameObservation>) {
+        self.dns_in_flight.remove(&addr);
+        self.hostname_cache.insert(addr, observation);
+    }
+
+    /// `get_hostnames(pid)` — the highest-confidence `ResolvedHostname` per
+    /// connection when sources disagree, both shown if more than one
+    /// scores above 0.85 (`docs/DATA_MODEL.md`'s display rule). Only ever
+    /// one source (`ReverseDns`) exists until Phase 0.4 adds `Sni`/
+    /// `HttpHost`, so today this always returns at most one per connection
+    /// — the grouping logic is here now so 0.4 doesn't have to add it.
+    pub fn get_hostnames(&self, pid: u32) -> Envelope<Vec<ResolvedHostname>> {
+        let now = Utc::now();
+        let mut data = Vec::new();
+        for conn in self.connections.values().filter(|c| c.pid == pid) {
+            let Some(addr) = &conn.remote_addr else {
+                continue;
+            };
+            let Some(Some(obs)) = self.hostname_cache.get(addr) else {
+                continue;
+            };
+            data.push(ResolvedHostname {
+                connection_id: conn.connection_id.clone(),
+                source: obs.source,
+                hostname: obs.hostname.clone(),
+                confidence: obs.confidence,
+                status: ObservationStatus {
+                    state: ObservationState::Observed,
+                    observed_at: now,
+                    last_successful_at: Some(obs.observed_at),
+                    reason: None,
+                    provider: Some(Provider::Dns),
+                },
+            });
+        }
+        let status = ObservationStatus {
+            state: ObservationState::Observed,
+            observed_at: now,
+            last_successful_at: Some(now),
+            reason: None,
+            provider: Some(Provider::Dns),
+        };
+        Envelope::ok(status, data)
+    }
+
+    /// `get_timeline(pid)` — every `TrafficEvent` for a connection that has
+    /// ever belonged to `pid`, including closed/expired ones (the Engine
+    /// retains those, same as `get_connections`).
+    pub fn get_timeline(&self, pid: u32) -> Envelope<Vec<TrafficEvent>> {
+        let connection_ids: HashSet<&str> = self
+            .connections
+            .values()
+            .filter(|c| c.pid == pid)
+            .map(|c| c.connection_id.as_str())
+            .collect();
+        let data = self
+            .timeline
+            .iter()
+            .filter(|e| {
+                e.connection_id
+                    .as_deref()
+                    .is_some_and(|id| connection_ids.contains(id))
+            })
+            .cloned()
+            .collect();
+        let now = Utc::now();
+        let status = ObservationStatus {
+            state: ObservationState::Observed,
+            observed_at: now,
+            last_successful_at: Some(now),
+            reason: None,
+            provider: Some(Provider::Engine),
+        };
+        Envelope::ok(status, data)
+    }
+
+    /// Events generated by the most recent `refresh_connections`/
+    /// `refresh_processes` calls, for live per-tick emission. Does not
+    /// affect `get_timeline`, which reads the full retained history.
+    pub fn take_pending_events(&mut self) -> Vec<TrafficEvent> {
+        std::mem::take(&mut self.pending_events)
     }
 
     fn to_process_info(&self, pid: u32, tracked: &TrackedProcess) -> ProcessInfo {
@@ -375,7 +562,7 @@ impl ObservationEngine {
 mod engine_tests {
     use super::*;
     use crate::models::{ProcessObservation, ProviderStatus, SocketObservation};
-    use crate::tests::{MockProcessProvider, MockSocketProvider};
+    use crate::tests::{MockDnsProvider, MockProcessProvider, MockSocketProvider};
     use chrono::Duration as ChronoDuration;
 
     fn process_snapshot(now: chrono::DateTime<Utc>, pids: &[u32]) -> crate::models::ProcessSnapshot {
@@ -437,7 +624,7 @@ mod engine_tests {
             socket_snapshot_established(t0, 100),
             socket_snapshot_empty(t1),
         ]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider));
 
         let processes = engine.get_processes();
         assert_eq!(
@@ -474,7 +661,7 @@ mod engine_tests {
             socket_snapshot_established(t0, 200),
             socket_snapshot_empty(t1), // same PID still running, socket just gone
         ]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider));
 
         let first = engine.get_connections(200);
         assert_eq!(
@@ -506,7 +693,7 @@ mod engine_tests {
                 status: ProviderStatus::transient_failure(t1, "netstat2 call failed"),
             },
         ]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider));
 
         let first = engine.get_connections(300);
         let first_conn = first.data.unwrap()[0].clone();
@@ -538,7 +725,7 @@ mod engine_tests {
         let process = MockProcessProvider::new(vec![process_snapshot(t0, &[400])]);
         let socket =
             MockSocketProvider::new(vec![socket_snapshot_empty(t0)]).with_denied_pids(vec![999]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider));
 
         let result = engine.get_connections(999);
         assert_eq!(result.status.state, ObservationState::PermissionDenied);
@@ -571,7 +758,7 @@ mod engine_tests {
         listen_snapshot_2.status = ProviderStatus::observed(t1);
 
         let socket = MockSocketProvider::new(vec![listen_snapshot, listen_snapshot_2]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider));
 
         let first = engine.get_connections(500);
         assert_eq!(
@@ -597,6 +784,7 @@ mod engine_tests {
         let mut engine = ObservationEngine::new(
             Box::new(crate::providers::SysinfoProcessProvider),
             Box::new(crate::providers::NetstatSocketProvider),
+            Arc::new(crate::providers::ReverseDnsProvider),
         );
 
         let own_pid = std::process::id();
@@ -629,6 +817,7 @@ mod engine_tests {
         let mut engine = ObservationEngine::new(
             Box::new(crate::providers::SysinfoProcessProvider),
             Box::new(crate::providers::NetstatSocketProvider),
+            Arc::new(crate::providers::ReverseDnsProvider),
         );
         let connections = engine.get_connections(own_pid);
         let data = connections.data.expect("get_connections must carry data when observed");
@@ -673,7 +862,7 @@ mod engine_tests {
             snap2,
             snap3,
         ]);
-        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket));
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider));
 
         let first_id = engine.get_connections(600).data.unwrap()[0].connection_id.clone();
         let after_gap = engine.get_connections(600);
@@ -700,5 +889,142 @@ mod engine_tests {
             .find(|c| c.connection_id == first_id)
             .expect("the original connection must still be retained, not dropped");
         assert_eq!(old_conn.lifecycle_state, LifecycleState::Expired);
+    }
+
+    #[test]
+    fn traffic_events_fire_on_lifecycle_transitions() {
+        let t0 = Utc::now();
+        let t1 = t0 + ChronoDuration::seconds(1);
+        let t2 = t0 + ChronoDuration::seconds(2);
+
+        let process = MockProcessProvider::new(vec![
+            process_snapshot(t0, &[700]),
+            process_snapshot(t2, &[]), // pid 700 exits at t2
+        ]);
+        // t0: ESTABLISHED at first sight -> immediately Active -> Opened.
+        // t1: gone -> Expired.
+        let socket = MockSocketProvider::new(vec![
+            socket_snapshot_established(t0, 700),
+            socket_snapshot_empty(t1),
+        ]);
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider));
+
+        engine.get_processes(); // t0: consumes the "running" process snapshot
+        engine.get_connections(700); // t0: opened
+        engine.get_connections(700); // t1: expired
+        engine.get_processes(); // t2: process exits -> closes the (expired) connection
+
+        let timeline = engine.get_timeline(700);
+        let events = timeline.data.unwrap();
+        let types: Vec<TrafficEventType> = events.iter().map(|e| e.event_type).collect();
+        assert!(types.contains(&TrafficEventType::ConnectionOpened));
+        assert!(types.contains(&TrafficEventType::ConnectionExpired));
+        assert!(types.contains(&TrafficEventType::ConnectionClosed));
+        for e in &events {
+            assert!(e.connection_id.is_some());
+        }
+    }
+
+    #[test]
+    fn take_pending_events_drains_without_affecting_timeline() {
+        let t0 = Utc::now();
+        let process = MockProcessProvider::new(vec![process_snapshot(t0, &[710])]);
+        let socket = MockSocketProvider::new(vec![socket_snapshot_established(t0, 710)]);
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider));
+
+        engine.get_connections(710);
+        let pending = engine.take_pending_events();
+        assert_eq!(pending.len(), 1);
+        assert!(engine.take_pending_events().is_empty(), "drained once, empty the second time");
+
+        // The full timeline is unaffected by draining pending_events.
+        let timeline = engine.get_timeline(710).data.unwrap();
+        assert_eq!(timeline.len(), 1);
+    }
+
+    #[test]
+    fn pending_dns_lookups_are_deduplicated_across_refreshes() {
+        let t0 = Utc::now();
+        let process = MockProcessProvider::new(vec![process_snapshot(t0, &[720])]);
+        let socket = MockSocketProvider::new(vec![
+            socket_snapshot_established(t0, 720),
+            socket_snapshot_established(t0, 720),
+        ]);
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider));
+
+        engine.get_connections(720);
+        let first_pending = engine.take_pending_dns_lookups();
+        assert_eq!(first_pending, vec!["93.184.216.34".to_string()]);
+
+        // Same remote address seen again — already in-flight, not re-queued.
+        engine.get_connections(720);
+        assert!(engine.take_pending_dns_lookups().is_empty());
+    }
+
+    #[test]
+    fn resolved_hostnames_surface_by_connection() {
+        let t0 = Utc::now();
+        let process = MockProcessProvider::new(vec![process_snapshot(t0, &[730])]);
+        let socket = MockSocketProvider::new(vec![socket_snapshot_established(t0, 730)]);
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider));
+
+        let conn = engine.get_connections(730).data.unwrap()[0].clone();
+        assert!(engine.get_hostnames(730).data.unwrap().is_empty(), "nothing resolved yet");
+
+        engine.record_hostname(
+            "93.184.216.34".to_string(),
+            Some(crate::models::HostnameObservation {
+                queried_addr: "93.184.216.34".to_string(),
+                source: crate::models::HostnameSource::ReverseDns,
+                hostname: "example.com".to_string(),
+                confidence: 0.5,
+                observed_at: t0,
+            }),
+        );
+
+        let resolved = engine.get_hostnames(730).data.unwrap();
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved[0].connection_id, conn.connection_id);
+        assert_eq!(resolved[0].hostname, "example.com");
+    }
+
+    #[test]
+    fn configured_poll_interval_changes_the_stale_threshold() {
+        let t0 = Utc::now();
+        // 3 * 1000ms = 3000ms threshold. t1 is 2s later (not yet stale),
+        // t2 is 4s later (stale).
+        let t1 = t0 + ChronoDuration::seconds(2);
+        let t2 = t0 + ChronoDuration::seconds(4);
+
+        let process = MockProcessProvider::new(vec![process_snapshot(t0, &[740])]);
+        let socket = MockSocketProvider::new(vec![
+            socket_snapshot_established(t0, 740),
+            crate::models::SocketSnapshot {
+                timestamp: t1,
+                observations: vec![],
+                status: ProviderStatus::transient_failure(t1, "still down"),
+            },
+            crate::models::SocketSnapshot {
+                timestamp: t2,
+                observations: vec![],
+                status: ProviderStatus::transient_failure(t2, "still down"),
+            },
+        ]);
+        let mut engine = ObservationEngine::new(Box::new(process), Box::new(socket), Arc::new(MockDnsProvider));
+        engine.set_poll_interval_ms(1000);
+
+        engine.get_connections(740); // t0: observed
+        let at_t1 = engine.get_connections(740);
+        assert_eq!(
+            at_t1.status.state,
+            ObservationState::TransientFailure,
+            "2s < 3s threshold, not stale yet"
+        );
+        let at_t2 = engine.get_connections(740);
+        assert_eq!(
+            at_t2.status.state,
+            ObservationState::Stale,
+            "4s > 3s threshold (3 * 1000ms poll interval)"
+        );
     }
 }

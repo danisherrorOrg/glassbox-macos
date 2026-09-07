@@ -5,8 +5,8 @@
 
 use std::sync::Mutex;
 
-use crate::models::{ProcessSnapshot, SocketSnapshot};
-use crate::providers::{ProcessProvider, SocketProvider};
+use crate::models::{HostnameObservation, ProcessSnapshot, ProviderStatus, SocketSnapshot};
+use crate::providers::{DNSProvider, ProcessProvider, SocketProvider};
 
 pub struct MockProcessProvider {
     snapshots: Mutex<Vec<ProcessSnapshot>>,
@@ -70,5 +70,15 @@ impl SocketProvider for MockSocketProvider {
 
     fn is_permitted(&self, pid: u32) -> bool {
         !self.denied_pids.contains(&pid)
+    }
+}
+
+/// A DNS provider that never resolves anything — the "no PTR record" case,
+/// good enough for tests that don't exercise hostname resolution directly.
+pub struct MockDnsProvider;
+
+impl DNSProvider for MockDnsProvider {
+    fn resolve(&self, _addr: &str) -> (Option<HostnameObservation>, ProviderStatus) {
+        (None, ProviderStatus::observed(chrono::Utc::now()))
     }
 }

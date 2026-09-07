@@ -59,3 +59,37 @@ export interface NetworkConnection {
   last_seen: string;
   status: ObservationStatus;
 }
+
+export type HostnameSource = "reverse_dns" | "sni" | "http_host";
+
+export interface ResolvedHostname {
+  connection_id: string;
+  source: HostnameSource;
+  hostname: string;
+  confidence: number;
+  status: ObservationStatus;
+}
+
+export type TrafficEventType =
+  | "connection_opened"
+  | "connection_closed"
+  | "connection_expired"
+  | "request"
+  | "response";
+
+export interface TrafficEvent {
+  event_id: string;
+  timestamp: string;
+  type: TrafficEventType;
+  connection_id: string | null;
+  request_id: string | null;
+  response_id: string | null;
+}
+
+export type MonitoringState = "idle" | "starting" | "running" | "stopping" | "stopped" | "failed";
+
+export interface MonitoringStatus {
+  state: MonitoringState;
+  pid: number | null;
+  reason: string | null;
+}

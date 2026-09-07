@@ -1,0 +1,56 @@
+.timeline-view__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.timeline-view__item {
+  display: flex;
+  gap: 0.75em;
+  align-items: baseline;
+  padding: 0.35em 0;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+  font-size: 0.9em;
+}
+
+.timeline-view__time {
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+  min-width: 5em;
+}
+
+.timeline-view__type {
+  font-weight: 600;
+}
+
+.timeline-view__type--connection_opened {
+  color: #14532d;
+}
+
+.timeline-view__type--connection_closed {
+  color: #374151;
+}
+
+.timeline-view__type--connection_expired {
+  color: #78350f;
+}
+
+.timeline-view__conn {
+  color: #6b7280;
+  font-family: monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  .timeline-view__type--connection_opened {
+    color: #bbf7d0;
+  }
+
+  .timeline-view__type--connection_closed {
+    color: #d4d4d8;
+  }
+
+  .timeline-view__type--connection_expired {
+    color: #fde68a;
+  }
+}
