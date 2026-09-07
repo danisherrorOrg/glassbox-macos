@@ -18,6 +18,11 @@ npm run tauri dev
 Requires Rust (`cargo`/`rustc`) and Node.js. `npm run tauri dev` launches the
 app with hot-reload on both the Rust core and the React frontend.
 
+Also requires `mitmproxy` (`brew install --cask mitmproxy`) for traffic
+capture (Phase 0.3+) — the Rust core spawns `mitmdump` as a helper process
+at runtime; without it on `PATH`, traffic capture reports itself as
+unavailable rather than failing to build.
+
 ## Recommended IDE Setup
 
 - [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)

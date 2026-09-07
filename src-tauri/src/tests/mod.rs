@@ -108,4 +108,8 @@ impl TrafficProvider for MockTrafficProvider {
     fn take_flows(&self) -> Vec<CapturedFlow> {
         std::mem::take(&mut self.flows.lock().unwrap())
     }
+
+    fn status(&self) -> ProviderStatus {
+        ProviderStatus::observed(chrono::Utc::now())
+    }
 }

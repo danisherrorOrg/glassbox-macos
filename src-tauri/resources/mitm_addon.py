@@ -188,7 +188,10 @@ class ObservationAddon:
             "status_code": flow.response.status_code,
             "headers": _redact_headers(flow.response.headers),
             "body": _redact_body(flow.response.raw_content),
-            "duration_ms": duration_ms or 0.0,
+            # `None`, never coerced to `0.0` — that would be
+            # indistinguishable from a real, observed zero-millisecond
+            # response (Phase 0.3 code-review gap 2/6, docs/[9] TODO.md).
+            "duration_ms": duration_ms,
         }
 
     def _build_evidence(self, flow):

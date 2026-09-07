@@ -41,6 +41,7 @@ pub fn run() {
             commands::get_capabilities,
             commands::start_traffic_capture,
             commands::stop_traffic_capture,
+            commands::get_traffic_status,
             commands::poll_traffic_flows,
             commands::monitoring::start_monitoring,
             commands::monitoring::stop_monitoring,

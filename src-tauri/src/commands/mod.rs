@@ -94,6 +94,19 @@ pub async fn stop_traffic_capture(state: State<'_, EngineHandle>) -> Result<(), 
     Ok(())
 }
 
+/// Ongoing health of the current (or most recent) capture session — Phase
+/// 0.3 code-review gap 4/6 (`docs/[9] TODO.md`). Distinct from
+/// `start_traffic_capture`'s return value, which only reports whether the
+/// helper process was spawned; this reflects whether it's actually still
+/// connected and streaming, so the frontend can distinguish a session
+/// stuck on an unapproved macOS prompt (or one that crashed mid-session)
+/// from one that's genuinely working.
+#[tauri::command]
+pub async fn get_traffic_status(state: State<'_, EngineHandle>) -> Result<ProviderStatus, ()> {
+    let engine = state.lock().await;
+    Ok(engine.traffic_status())
+}
+
 /// Drains and correlates whatever the traffic provider has captured since
 /// the last poll — the Phase 0.3 "debug log" the demo checkpoint asks for
 /// (`docs/[9] TODO.md`). Not yet wired into `NetworkConnection`/

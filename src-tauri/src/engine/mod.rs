@@ -567,6 +567,15 @@ impl ObservationEngine {
         self.traffic_provider.stop();
     }
 
+    /// Ongoing health of the current (or most recent) capture session —
+    /// Phase 0.3 code-review gap 4/6 (`docs/[9] TODO.md`). Distinct from
+    /// `start_traffic_capture`'s return value, which only ever reports
+    /// whether the helper process was spawned; this reflects whether it's
+    /// actually still connected and streaming.
+    pub fn traffic_status(&self) -> ProviderStatus {
+        self.traffic_provider.status()
+    }
+
     /// Drains whatever flows the traffic provider has captured since the
     /// last call, pairing each with the `connection_id` it correlates to
     /// (if any) — the Phase 0.3 "spike, independently of the UI" item.
@@ -1470,16 +1479,20 @@ mod engine_tests {
         // Let the addon's IPC connection establish, then observe both
         // processes' sockets (populates NetworkConnection for correlation)
         // while their scenario loops run several real HTTP requests each.
-        // `network_test_target.py serve` cycles through 9 scenarios at 3s
-        // apart, and `long_lived` alone sleeps 6s internally before it does
-        // anything — the `http` scenario (the first one this test can
-        // actually correlate) isn't reached until roughly 21s in, so this
-        // has to be patient, not fast.
+        // `network_test_target.py serve` cycles through 10 scenarios at 3s
+        // apart, and `long_lived`/`simultaneous`/`slow_response` alone sleep
+        // ~8.5s internally between them — the `http` scenario (the first
+        // one this test can actually correlate) isn't reached until roughly
+        // 21s in, and `sensitive_fields` (last in the cycle, needed for the
+        // redaction assertions below — Phase 0.3 code-review gap 1/6,
+        // docs/[9] TODO.md) isn't reached until roughly 35s in, so this has
+        // to be patient, not fast.
         tokio::time::sleep(Duration::from_secs(1)).await;
         let mut found_match = false;
         let mut saw_any_flow = false;
         let mut saw_real_http_method = false;
-        for _ in 0..45 {
+        let mut found_sensitive = false;
+        for _ in 0..80 {
             engine.get_connections(target_pid);
             let polled = engine.poll_traffic_flows();
             for (flow, matched) in polled {
@@ -1507,8 +1520,41 @@ mod engine_tests {
                 if matched.is_some() {
                     found_match = true;
                 }
+                if flow.request.path == "/sensitive" {
+                    found_sensitive = true;
+                    let auth_header = flow
+                        .request
+                        .headers
+                        .iter()
+                        .find(|(k, _)| k.eq_ignore_ascii_case("authorization"))
+                        .map(|(_, v)| v.as_str());
+                    assert_eq!(
+                        auth_header,
+                        Some("[redacted]"),
+                        "tier-1 Authorization header must be redacted by the mitmproxy addon before it reaches the core"
+                    );
+                    let body = flow.request.body.as_deref().unwrap_or("");
+                    assert!(
+                        body.contains("[redacted]"),
+                        "tier-1 body fields (password/token) must be redacted: {body}"
+                    );
+                    for secret in [
+                        "hunter2-fake-password",
+                        "fake-token-do-not-use-1234567890abcdef",
+                        "fake-jwt-not-a-real-token",
+                    ] {
+                        assert!(
+                            !body.contains(secret),
+                            "fake tier-1 secret literal must never reach the core unredacted: {body}"
+                        );
+                        assert!(
+                            auth_header.is_none_or(|h| !h.contains(secret)),
+                            "fake tier-1 secret literal must never reach the core unredacted in headers"
+                        );
+                    }
+                }
             }
-            if found_match {
+            if found_match && found_sensitive {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(700)).await;
@@ -1528,6 +1574,10 @@ mod engine_tests {
         assert!(
             found_match,
             "expected at least one captured flow to correlate to a real tracked NetworkConnection"
+        );
+        assert!(
+            found_sensitive,
+            "expected the sensitive_fields scenario's flow to be captured and redaction-checked"
         );
     }
 }

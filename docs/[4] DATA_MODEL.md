@@ -199,7 +199,7 @@ What `TrafficProvider` actually captured — returned directly from its trait me
 | status_code | u16 | yes |
 | headers | HashMap\<String, String\> | yes — tier-1 fields already redacted by the mitmproxy addon; tier-2 fields present raw |
 | body | Option\<String\> | no — full body, same truncation note as `RawHTTPRequest.body` |
-| duration_ms | f64 | yes |
+| duration_ms | Option\<f64\> | no — `None` when the addon couldn't compute a duration (missing request/response timestamps); never coerced to `0.0`, which would be indistinguishable from a real, observed zero-millisecond response — same field-level-absence pattern as `cpu_percent`/`bytes_sent` (Phase 0.3 code-review gap 2/6, docs/[9] TODO.md) |
 
 **How a captured flow reaches the Engine, and how `reveal_raw` finds it again:** `TrafficProvider`'s trait method returns each captured flow as a triple — `(RawHTTPRequest, Option<RawHTTPResponse>, CorrelationEvidence)` — not the raw types alone. The `CorrelationEvidence` is what the Engine correlates against `NetworkConnection`s (per the rule under `CorrelationEvidence` below); the `Raw*` pair is what the `Redactor` consumes to produce `HTTPRequest`/`HTTPResponse`. Only once the Redactor processes a pair does the Engine mint `request_id`/`response_id` and record `request_id → (RawHTTPRequest, Option<RawHTTPResponse>)` in a session-scoped in-memory map — that map, not a field on the `Raw*` objects themselves, is what `reveal_raw(request_id)` looks up. The map entry is destroyed under the same lifetime rule as the `Raw*` objects it references (below), and is never itself persisted.
 

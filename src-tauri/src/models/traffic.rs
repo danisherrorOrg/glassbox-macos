@@ -53,5 +53,10 @@ pub struct RawHTTPResponse {
     pub status_code: u16,
     pub headers: HashMap<String, String>,
     pub body: Option<String>,
-    pub duration_ms: f64,
+    /// `None` when the addon couldn't compute a duration (missing
+    /// request/response timestamps) — never coerced to `0.0`, which would
+    /// be indistinguishable from a real, observed zero-millisecond
+    /// response. Same field-level-absence pattern as `cpu_percent`/
+    /// `bytes_sent` (`OBSERVATION_CONTRACT.md`).
+    pub duration_ms: Option<f64>,
 }
