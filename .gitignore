@@ -7,10 +7,15 @@
 .LSOverride
 
 # Editors / IDEs
-.vscode/
+.vscode/*
+!.vscode/extensions.json
 .idea/
 *.swp
 *.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
 
 # Environment / secrets
 .env
@@ -37,10 +42,12 @@ dist-ssr/
 build/
 .vite/
 .turbo/
+*.local
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+lerna-debug.log*
 .pnpm-store/
 
 # Python (mitmproxy helper)
