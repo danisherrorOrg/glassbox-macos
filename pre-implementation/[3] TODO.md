@@ -118,7 +118,7 @@ scoped, not as the actual done-list.
       1 `Not an issue` (`PIF-039`, reason recorded). Zero left `Open`.
 - [x] The ADR from step C is committed in `docs/[2] DECISIONS.md`. ADR-014,
       commit `fc4ec5e`.
-- [ ] **Owner sign-off:** you've actually read `[2] FINDINGS.md` end to end and are
+- [x] **Owner sign-off:** you've actually read `[2] FINDINGS.md` end to end and are
       comfortable freezing the design on these terms — not just "the checklist has
       no open boxes." **This is a human step — not something an agent can do on
       the owner's behalf.** In particular, worth deliberately re-reading: the step
@@ -130,9 +130,12 @@ scoped, not as the actual done-list.
 - [x] `[0] README.md`'s "Status at a glance" is updated to reflect the cleared
       state (including the step D loop-stop decision and step F's outstanding
       status), 2026-09-07.
-- [ ] Only then: start `docs/[9] TODO.md` Phase 0 (project setup) and Phase 0.1.
-      Blocked on the owner sign-off above, and on step F (below) per its own
-      hard constraint.
+- [x] Only then: start `docs/[9] TODO.md` Phase 0 (project setup) and Phase 0.1.
+      Both prerequisites cleared 2026-09-07: owner sign-off above is checked, and
+      step F (below) is complete. **The pre-implementation gate is fully cleared —
+      `docs/[9] TODO.md` Phase 0 can begin.** (`PIF-016`'s deferred mechanical
+      cross-reference fix is not a gate blocker — it was deliberately deferred to
+      Phase 0 itself, per step B's decision, not to this checklist.)
 
 ## F — Permissions spike (empirical, not a doc audit)
 
@@ -187,19 +190,18 @@ folded back in (last bullet below) if they turn out to matter, before any real
       findings; these are directly-observed facts, not interpretive gaps). See
       `[2] FINDINGS.md` step F section for the full record.
 - [x] Only after this step *and* E: begin `docs/[9] TODO.md` Phase 0's actual project
-      setup and Phase 0.1's provider implementation. **Still blocked** — step F is
-      now complete, but step E's owner sign-off checkbox is still open (a human
-      step, not something this pass can close) and must land first.
+      setup and Phase 0.1's provider implementation. Both are now done — step F
+      complete, and step E's owner sign-off checkbox checked 2026-09-07 — so this is
+      no longer blocked.
 
 ---
 
-**Current state (2026-09-07):** Steps A–D and F are complete. 46 findings total
-(`PIF-001`–`PIF-046`) — 44 `Fixed`, `PIF-016` `Deferred` (its own standalone
-mechanical commit, not yet done — do it before step E's final gate), `PIF-039` `Not
-an issue`. Zero `Open`, zero `BLOCKING` outstanding. Step F's empirical permissions
-spike ran on this machine, answered all five checklist questions in
-`docs/[7] PERMISSIONS_AND_PLATFORM.md` (flipped to `VERIFIED`), and its two
-downstream-impacting findings (`PIF-045`, `PIF-046`) are applied. **Only step E's
-owner sign-off remains** — a human read of `[2] FINDINGS.md` end to end, which this
-agent cannot do on the owner's behalf. Once that lands, `docs/[9] TODO.md` Phase 0
-can begin.
+**Current state (2026-09-07):** Steps A–F are all complete, including step E's owner
+sign-off (a human step, checked by the project owner directly). 46 findings total
+(`PIF-001`–`PIF-046`) — 44 `Fixed`, `PIF-016` `Deferred` (to its own standalone
+mechanical commit in `docs/[9] TODO.md` Phase 0 itself, not a gate blocker here),
+`PIF-039` `Not an issue`. Zero `Open`, zero `BLOCKING` outstanding. Step F's
+empirical permissions spike ran on this machine, answered all five checklist
+questions in `docs/[7] PERMISSIONS_AND_PLATFORM.md` (flipped to `VERIFIED`), and its
+two downstream-impacting findings (`PIF-045`, `PIF-046`) are applied. **The
+pre-implementation gate is fully cleared — `docs/[9] TODO.md` Phase 0 can begin.**

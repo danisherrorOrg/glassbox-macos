@@ -93,7 +93,6 @@ contract change, since `OBSERVATION_CONTRACT.md`'s `permission_denied` status wa
 already correctly specified. Full method and raw results live in
 `docs/[7] PERMISSIONS_AND_PLATFORM.md`'s "First technical spike" section.
 
-**Not yet done:** step E's owner sign-off (a human read of `[2] FINDINGS.md`
-end-to-end, separate from the checklist having no open boxes) — **this is the only
-thing left before `docs/[9] TODO.md` Phase 0.1 begins**, and it's a human step this
-agent cannot complete on the owner's behalf.
+**Step E's owner sign-off is done** — the project owner read `[2] FINDINGS.md`
+end-to-end and checked that box directly, 2026-09-07. With step F also complete, the
+pre-implementation gate is fully cleared: **`docs/[9] TODO.md` Phase 0 can begin.**
