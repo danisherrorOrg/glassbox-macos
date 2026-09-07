@@ -16,15 +16,33 @@
 
 .container {
   margin: 0;
-  padding-top: 10vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
+  padding: 2vh 3vw;
 }
 
 h1 {
   text-align: center;
+}
+
+.app-layout__panes {
+  display: flex;
+  gap: 2em;
+  align-items: flex-start;
+  margin-top: 1.5em;
+}
+
+.app-layout__list {
+  flex: 1;
+  min-width: 0;
+}
+
+.app-layout__detail {
+  flex: 1;
+  min-width: 0;
+}
+
+.app-layout__placeholder {
+  color: #6b7280;
+  font-style: italic;
 }
 
 @media (prefers-color-scheme: dark) {

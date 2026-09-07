@@ -1,3 +1,15 @@
 //! `ProcessProvider`/`SocketProvider`/`DNSProvider`/`TrafficProvider` traits
-//! and their implementations. See `docs/ARCHITECTURE.md`. Populated starting
-//! Phase 0.1.
+//! and their implementations. See `docs/ARCHITECTURE.md`.
+
+mod dns;
+mod process;
+mod socket;
+mod system;
+mod traffic;
+
+#[allow(unused_imports)] // bare trait stub — see dns.rs
+pub use dns::DNSProvider;
+pub use process::{ProcessProvider, SysinfoProcessProvider};
+pub use socket::{NetstatSocketProvider, SocketProvider};
+#[allow(unused_imports)] // bare trait stub — see traffic.rs
+pub use traffic::TrafficProvider;

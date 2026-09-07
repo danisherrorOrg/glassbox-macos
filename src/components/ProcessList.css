@@ -1,0 +1,48 @@
+.process-list {
+  text-align: left;
+  width: 100%;
+}
+
+.process-list__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  margin-bottom: 0.75em;
+}
+
+.process-list__search {
+  flex: 1;
+}
+
+.process-list__status-note {
+  color: #6b7280;
+  font-style: italic;
+}
+
+.process-list__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+
+.process-list__table th,
+.process-list__table td {
+  text-align: left;
+  padding: 0.4em 0.6em;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+}
+
+.process-list__table tbody tr:hover {
+  background: rgba(128, 128, 128, 0.08);
+  cursor: pointer;
+}
+
+.process-list__row--selected {
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.process-list__empty {
+  text-align: center;
+  color: #6b7280;
+  font-style: italic;
+}

@@ -1,0 +1,35 @@
+.process-detail {
+  text-align: left;
+  width: 100%;
+}
+
+.process-detail__heading {
+  margin: 0 0 0.5em;
+}
+
+.process-detail__tabs {
+  display: flex;
+  gap: 0.25em;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+  margin-bottom: 1em;
+}
+
+.process-detail__tab {
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0.5em 0.9em;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.process-detail__tab--active {
+  border-bottom-color: #396cd8;
+  font-weight: 600;
+}
+
+.process-detail__not-yet {
+  color: #6b7280;
+  font-style: italic;
+}

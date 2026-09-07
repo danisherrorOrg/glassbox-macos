@@ -1,0 +1,61 @@
+// Mirrors src-tauri/src/models — see docs/DATA_MODEL.md and
+// docs/OBSERVATION_CONTRACT.md for the authoritative shapes. Keep these in
+// sync with the Rust types by hand for now (no shared codegen yet).
+
+export type ObservationState =
+  | "observed"
+  | "unavailable"
+  | "permission_denied"
+  | "unsupported"
+  | "transient_failure"
+  | "stale"
+  | "unmatched";
+
+export type StatusProvider = "process" | "socket" | "dns" | "traffic" | "engine";
+
+export interface ObservationStatus {
+  state: ObservationState;
+  observed_at: string;
+  last_successful_at: string | null;
+  reason: string | null;
+  provider: StatusProvider | null;
+}
+
+export interface Envelope<T> {
+  status: ObservationStatus;
+  data: T | null;
+}
+
+export type ProcessState = "running" | "exited";
+
+export interface ProcessInfo {
+  pid: number;
+  name: string;
+  executable_path: string;
+  cpu_percent: number | null;
+  memory_bytes: number | null;
+  process_state: ProcessState;
+  status: ObservationStatus;
+  active_connection_count: number | null;
+}
+
+export type Protocol = "tcp" | "udp";
+
+export type LifecycleState = "discovered" | "active" | "closed" | "expired";
+
+export interface NetworkConnection {
+  connection_id: string;
+  pid: number;
+  protocol: Protocol;
+  local_addr: string;
+  local_port: number;
+  remote_addr: string | null;
+  remote_port: number | null;
+  state: string;
+  bytes_sent: number | null;
+  bytes_received: number | null;
+  lifecycle_state: LifecycleState;
+  first_seen: string;
+  last_seen: string;
+  status: ObservationStatus;
+}
