@@ -61,6 +61,9 @@ venv/
 .pytest_cache/
 .ruff_cache/
 
+# NetworkTestTarget's self-signed dev cert (regenerated on demand)
+test-target/certs/
+
 # Logs
 *.log
 logs/
