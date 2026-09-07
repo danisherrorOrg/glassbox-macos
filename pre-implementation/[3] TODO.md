@@ -14,21 +14,37 @@ into one step.
 
 ## A — Cross-model verification (run against the *current*, unfixed docs)
 
-- [ ] Run `[1] AUDIT_PROMPT.md` (with all of `docs/` attached, as they stand right
+- [x] Run `[1] AUDIT_PROMPT.md` (with all of `docs/` attached, as they stand right
       now — do not pre-apply any Round 1 fixes first) against at least one AI model
-      other than the one that produced Round 1.
-- [ ] Log every finding into `[2] FINDINGS.md` as "Round 2," same format as Round 1.
+      other than the one that produced Round 1. Done 2026-09-07: ran against Opus 5
+      (Round 1 was Sonnet 5, same session that wrote the docs), via a fresh agent
+      with no access to `[2] FINDINGS.md`/this file, to preserve independence.
+- [x] Log every finding into `[2] FINDINGS.md` as "Round 2," same format as Round 1.
       If a Round 2 finding overlaps an existing `PIF-###`, note the overlap in that
       entry rather than creating a duplicate — and note explicitly that it was an
-      *independent* rediscovery, which is a stronger signal than Round 1 alone.
-- [ ] If Round 2 surfaces something genuinely new, give it its own `PIF-###`.
+      *independent* rediscovery, which is a stronger signal than Round 1 alone. Done:
+      5 of Round 2's findings independently rediscovered PIF-001/002/003/005/006
+      (cross-referenced in place); two of those five (PIF-002, PIF-006) came back at
+      a higher severity than Round 1 assigned — flagged for step B.
+- [x] If Round 2 surfaces something genuinely new, give it its own `PIF-###`. Done:
+      31 new findings logged, PIF-007 through PIF-037 (9 BLOCKING, 15 SHOULD-FIX, 7
+      WORTH-NOTING — severity counts across the *new* IDs only; see `[2] FINDINGS.md`
+      for the full at-a-glance table).
 
 ## B — Reconcile and decide
 
-- [ ] For every `Open` finding (Round 1 + Round 2 combined), decide: fix now, defer
+- [x] For every `Open` finding (Round 1 + Round 2 combined), decide: fix now, defer
       to a later phase (say which, and why), or not an issue (say why) — and update
       `Status` in `[2] FINDINGS.md` accordingly *before* touching any doc in
-      `docs/`. Deciding first keeps the fix step below purely mechanical.
+      `docs/`. Deciding first keeps the fix step below purely mechanical. Done
+      2026-09-07, against the actual `docs/` content (not just the finding
+      summaries) to confirm each one before deciding: 36 of 37 findings are
+      `Fix now`; PIF-016 (missing `[N] ` prefix in cross-references) is `Deferred`
+      to its own standalone mechanical commit in Phase 0, since it's purely
+      cosmetic and bundling it into step C's substantive edits would bury the real
+      diffs. No finding came back `Not an issue`. The two Round 1/Round 2 severity
+      disagreements (PIF-002, PIF-006) are both resolved as `Fix now` regardless of
+      exactly which severity label is correct.
 
 ## C — Apply fixes
 
@@ -108,6 +124,11 @@ folded back in (last bullet below) if they turn out to matter, before any real
 
 ---
 
-**Current state (2026-09-06):** Step A not started. Round 1's six findings
-(`PIF-001` through `PIF-006`) are logged in `[2] FINDINGS.md`, all `Open`. Do not
-apply fixes before running Step A against at least one other model.
+**Current state (2026-09-07):** Steps A and B complete. All 37 findings
+(`PIF-001`–`PIF-037`) are decided in `[2] FINDINGS.md`: 36 `Fix now`, 1 (`PIF-016`)
+`Deferred` to a standalone Phase 0 commit. Step C (apply fixes) has not started —
+that's next. Since step B decided *almost* everything should be fixed now rather
+than deferred, step C's scope is effectively "all 36 `Fix now` findings across
+`docs/`," not just the shorter Round-1-only list originally sketched in step C's
+bullets below — treat `[2] FINDINGS.md`'s Status column as the live, authoritative
+list for step C, not the bullets under "C — Apply fixes" (which predate Round 2).
