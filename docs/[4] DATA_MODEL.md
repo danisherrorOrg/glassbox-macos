@@ -173,9 +173,29 @@ What `TrafficProvider` actually has available when it captures a flow — this i
 
 The Engine matches `CorrelationEvidence` against known `NetworkConnection`s. A confident match assigns the evidence's flow to that `connection_id`. An insufficiently confident match produces `unmatched` (see `OBSERVATION_CONTRACT.md`) — the flow is never attached to a guessed connection, and a `connection_id` is never fabricated to force a match. The `evidence` that produced (or failed to produce) a match is retained on the resulting `HTTPRequest` — see below.
 
-## `RawHTTPRequest` / `RawHTTPResponse` (transient, in-memory only — never persisted)
+## `RawHTTPRequest` / `RawHTTPResponse` (provider-owned, transient, in-memory only — never persisted)
 
-What `TrafficProvider` actually captured, before any redaction, and the source a "show anyway" UI action reveals from. **Highly-sensitive fields (`Authorization`, API keys, passwords, tokens, credentials — see `PRIVACY_AND_SECURITY.md`'s classification) are stripped even here, at capture time, and never exist in raw form anywhere, including memory.** Only the "potentially sensitive" tier (URLs, query params, bodies, cookies, non-auth headers) is held raw transiently. Capture-time (tier-1) redaction runs inside the mitmproxy helper addon itself, before any value crosses the helper→core IPC socket — see `PRIVACY_AND_SECURITY.md`'s "two redaction checkpoints" for exactly where.
+What `TrafficProvider` actually captured — returned directly from its trait method, after the mitmproxy addon's tier-1 (highly-sensitive) redaction has already run, before the Engine's `Redactor` produces `HTTPRequest`/`HTTPResponse` from it. This is a provider-owned type, same discipline as `SocketObservation`/`ProcessObservation`: the Engine never constructs it, only consumes it as the `Redactor`'s input. It's also the source a "show anyway" UI action reveals from, via `reveal_raw(request_id)`.
+
+**Highly-sensitive fields (`Authorization`, API keys, passwords, tokens, credentials — see `PRIVACY_AND_SECURITY.md`'s classification) are stripped even here, at capture time, and never exist in raw form anywhere, including memory.** Only the "potentially sensitive" tier (URLs, query params, bodies, cookies, non-auth headers) is held raw transiently. Capture-time (tier-1) redaction runs inside the mitmproxy helper addon itself, before any value crosses the helper→core IPC socket — see `PRIVACY_AND_SECURITY.md`'s "two redaction checkpoints" for exactly where.
+
+| Field (`RawHTTPRequest`) | Type | Required |
+|---|---|---|
+| connection_id | Option\<String\> | no — `None` when correlation hasn't happened yet or was insufficiently confident, same meaning as `HTTPRequest.connection_id` |
+| method | String | yes |
+| host | String | yes |
+| path | String | yes |
+| headers | HashMap\<String, String\> | yes — tier-1 fields already redacted by the mitmproxy addon; tier-2 fields present raw |
+| body | Option\<String\> | no — the full body, not a truncated preview; truncation to the `body_preview` limit happens only when the `Redactor` produces `HTTPRequest` |
+| timestamp | DateTime\<Utc\> | yes |
+
+| Field (`RawHTTPResponse`) | Type | Required |
+|---|---|---|
+| request_id | Option\<String\> | no — mirrors `RawHTTPRequest.connection_id`'s optionality; may not be assigned yet at raw-capture time |
+| status_code | u16 | yes |
+| headers | HashMap\<String, String\> | yes — tier-1 fields already redacted by the mitmproxy addon; tier-2 fields present raw |
+| body | Option\<String\> | no — full body, same truncation note as `RawHTTPRequest.body` |
+| duration_ms | f64 | yes |
 
 **Lifetime rule, not left implicit:** these objects exist only as long as the live monitoring session that captured them, not indefinitely just because the process/session object itself stays alive. When a session stops, its `Raw*` objects are destroyed, not merely dropped-and-hoped-for-cleanup. A long-running session must not be allowed to accumulate raw sensitive data without bound — enforce, at minimum: a maximum body-preview size per object, a cap on the number of retained raw requests/responses, and a session-level memory budget with an eviction policy once it's hit. None of this needs full implementation in Phase 0.1, but the rule is established here so a later phase doesn't have to retrofit it onto data that's already been designed to linger.
 
@@ -299,4 +319,4 @@ Not implemented in Phase 0.1; implemented in Phase 0.3 (see `TODO.md` — this i
 
 ## Rules this document enforces
 
-A provider never constructs `NetworkConnection`, `ProcessInfo`, `ResolvedHostname`, or `ObservationStatus` — only `SocketObservation`, `ProcessObservation`, `HostnameObservation`, or `ProviderStatus`. A hostname is never assumed canonical — always carry `source` and `confidence`. `connection_id` is an Engine session identity, not an OS-level identity, assigned exclusively by the Engine's correlation step from `CorrelationEvidence` on the traffic side and snapshot-diffing (per the matching rule above) on the socket side — nothing else invents one, and the Engine prefers a false split over a false merge when matching confidence is insufficient. `lifecycle_state`, `first_seen`, `last_seen` are Engine-owned; `closed` requires positive evidence (process exit is the only route to it through Phase 0.2), `expired` is the default absent that evidence, and only a *successful* snapshot's absence counts as evidence of anything. Highly-sensitive fields never exist in raw form anywhere, including in `RawHTTPRequest`/`RawHTTPResponse`; potentially-sensitive fields may exist raw transiently in memory, bounded and evicted per session, but never in anything persisted or exported. `bytes_sent`/`bytes_received`/`cpu_percent`/`memory_bytes` are optional everywhere they appear — a `None` on any of them is the one field-level exception to the no-inference rule (`OBSERVATION_CONTRACT.md`) and never changes the object's own `ObservationStatus`.
+A provider never constructs `NetworkConnection`, `ProcessInfo`, `ResolvedHostname`, `HTTPRequest`/`HTTPResponse`, or `ObservationStatus` — only `SocketObservation`, `ProcessObservation`, `HostnameObservation`, `RawHTTPRequest`/`RawHTTPResponse`, or `ProviderStatus`. A hostname is never assumed canonical — always carry `source` and `confidence`. `connection_id` is an Engine session identity, not an OS-level identity, assigned exclusively by the Engine's correlation step from `CorrelationEvidence` on the traffic side and snapshot-diffing (per the matching rule above) on the socket side — nothing else invents one, and the Engine prefers a false split over a false merge when matching confidence is insufficient. `lifecycle_state`, `first_seen`, `last_seen` are Engine-owned; `closed` requires positive evidence (process exit is the only route to it through Phase 0.2), `expired` is the default absent that evidence, and only a *successful* snapshot's absence counts as evidence of anything. Highly-sensitive fields never exist in raw form anywhere, including in `RawHTTPRequest`/`RawHTTPResponse`; potentially-sensitive fields may exist raw transiently in memory, bounded and evicted per session, but never in anything persisted or exported. `bytes_sent`/`bytes_received`/`cpu_percent`/`memory_bytes` are optional everywhere they appear — a `None` on any of them is the one field-level exception to the no-inference rule (`OBSERVATION_CONTRACT.md`) and never changes the object's own `ObservationStatus`.

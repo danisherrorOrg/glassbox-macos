@@ -42,7 +42,7 @@ The Engine marks an observation `stale` when `now - status.last_successful_at > 
 **Process/socket layer**
 
 ```
-processes: observed | permission_denied | unavailable | transient_failure          (provider-level)
+processes: observed | permission_denied | unavailable | transient_failure | stale   (stale added by the Engine on top, same as sockets)
 sockets:   observed | permission_denied | unavailable | transient_failure | stale   (stale added by the Engine on top)
 ```
 
