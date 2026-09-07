@@ -1432,3 +1432,69 @@ type" rule's provider-owned list at the bottom of `DATA_MODEL.md`.
 | **Location** | `docs/[8] TESTING_STRATEGY.md` (mandatory test 2) |
 
 **Fix applied:** capitalized to `lifecycle_state == Expired — never Closed`, matching tests 1/3/4's convention.
+
+---
+
+## Round 5 — re-verification pass, run 2026-09-07 against commit `1354e73`
+
+Per `[3] TODO.md` step D's loop: Round 4 found one real SHOULD-FIX item (PIF-040),
+so another pass was run. This round found one more real SHOULD-FIX item — and
+notably, it's fresh drift introduced by PIF-040's own fix, not a leftover from the
+original design: giving `RawHTTPRequest`/`RawHTTPResponse` a field table (to close
+PIF-040) mirrored `HTTPRequest`/`HTTPResponse`'s shape onto them without checking
+whether post-correlation Engine-assigned identity fields belong on a pre-correlation,
+provider-owned type. Both fixed immediately, commit `ea7ac0e`. Zero new BLOCKING.
+
+### At a glance (Round 5 new findings)
+
+| ID | Severity | Status | Summary |
+|---|---|---|---|
+| [PIF-043](#pif-043--rawhttprequestrawhttpresponse-carried-engine-only-identity-fields-they-could-never-legitimately-hold) | SHOULD-FIX-BEFORE-CODING (blocks Phase 0.4) | Fixed | `RawHTTPRequest`/`RawHTTPResponse` carried Engine-only identity fields they could never legitimately hold |
+| [PIF-044](#pif-044--observationcapabilities-panel-mock-was-one-row-short-of-data_modelmds-table-request-vs-response-body) | WORTH-NOTING | Fixed | `ObservationCapabilities` panel mock was one row short of `DATA_MODEL.md`'s table (request vs. response body) |
+
+### PIF-043 — `RawHTTPRequest`/`RawHTTPResponse` carried Engine-only identity fields they could never legitimately hold
+
+| | |
+|---|---|
+| **Status** | Fixed — decided and applied 2026-09-07, commit `ea7ac0e`. Reason: the fourth occurrence of the exact provider/Engine-construction contradiction ADR-011/012/014 already spent three rounds fixing (sockets, processes, hostnames) — except this one was fresh drift from PIF-040's own fix, not inherited from the original design. Blocks Phase 0.4's first bullet the same way PIF-040 did. |
+| **Severity** | SHOULD-FIX-BEFORE-CODING (blocks Phase 0.4, not Phase 0.1) |
+| **Location** | `docs/[4] DATA_MODEL.md` (`RawHTTPRequest`/`RawHTTPResponse`, added by PIF-040's fix) vs. this document's own "who constructs this type" rule vs. `docs/[3] ARCHITECTURE.md` (`reveal_raw`) |
+
+**Issue**
+
+`RawHTTPRequest.connection_id` and `RawHTTPResponse.request_id` — added by PIF-040's
+fix to mirror `HTTPRequest`/`HTTPResponse`'s shape — are Engine-assigned identity
+fields on a type explicitly tagged provider-owned and provider-constructed. Nothing
+named which actor sets them or when; the provider can't (it doesn't have Engine
+identity), and the Engine "never constructs" `Raw*` per the same section. Separately,
+nothing linked a captured raw flow to the `CorrelationEvidence` it should be scored
+against, and `reveal_raw(request_id)`'s lookup mechanism was unspecified once the
+`Raw*` objects themselves couldn't carry that ID.
+
+**Why it matters**
+
+Same failure mode as PIF-009/PIF-002 (contradictory required-field-vs-ownership),
+just freshly introduced. Blocks Phase 0.4: an implementer building `TrafficProvider`,
+the `Redactor`, and `reveal_raw` has no correct way to populate these fields.
+
+**Fix applied**
+
+Removed `connection_id`/`request_id` from `RawHTTPRequest`/`RawHTTPResponse`.
+Specified `TrafficProvider`'s trait method returns `(RawHTTPRequest,
+Option<RawHTTPResponse>, CorrelationEvidence)` — giving the Engine something to
+correlate against without the raw type needing its own future identity. Named the
+actual `reveal_raw` mechanism: a session-scoped `request_id → (RawHTTPRequest,
+Option<RawHTTPResponse>)` map, populated when the Redactor mints `request_id` while
+processing a pair — the map is what `reveal_raw` looks up, not a field on `Raw*`.
+
+---
+
+### PIF-044 — `ObservationCapabilities` panel mock was one row short of `DATA_MODEL.md`'s table (request vs. response body)
+
+| | |
+|---|---|
+| **Status** | Fixed — decided and applied 2026-09-07, commit `ea7ac0e`. Reason: PIF-015's fix added the two missing rows (`remote_addresses`, `raw_packet_data`) but didn't reconcile that `DATA_MODEL.md` has separate `request_body`/`response_body` fields while the mock still has one combined "HTTP body" row. Low-stakes (report already disclaims authority to `DATA_MODEL.md`), but cheap to note as deliberate rather than leave looking like a miss. |
+| **Severity** | WORTH-NOTING |
+| **Location** | `docs/[1] process-network-inspector-report.md` ("Observation Capabilities panel") vs. `docs/[4] DATA_MODEL.md` (`ObservationCapabilities`) |
+
+**Fix applied:** added a sentence noting the mock's single "HTTP body" row deliberately combines `DATA_MODEL.md`'s two fields for space — a display choice, not a missed field.
