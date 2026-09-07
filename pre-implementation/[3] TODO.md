@@ -90,10 +90,16 @@ scoped, not as the actual done-list.
       commit `85249b0`, along with one new low-stakes item (PIF-038, fixed same
       commit) and one confirmed non-issue (PIF-039). Zero new BLOCKING findings.
 - [ ] Repeat A–D until a round produces zero new BLOCKING/SHOULD-FIX findings.
-      Not yet satisfied — Round 3 *did* find two SHOULD-FIX-level regressions
-      (the half-applied fixes above), even though they're now closed. Running one
-      more re-verification pass (Round 4) to confirm those corrections landed
-      cleanly and nothing else turns up, before treating this loop as converged.
+      Still not satisfied. Round 4 (2026-09-07) confirmed all three Round 3
+      corrections landed cleanly, but a fresh full pass found one more real
+      SHOULD-FIX item (PIF-040: `RawHTTPRequest`/`RawHTTPResponse` had no field
+      table or ownership tag — the one type in `DATA_MODEL.md` missing one) plus
+      two trivial WORTH-NOTING items (PIF-041, PIF-042). All three fixed
+      immediately, commit `1354e73`. Findings per round so far: 37 → 3 → 3
+      (Round 4 found 1 SHOULD-FIX + 2 WORTH-NOTING = 3 total, not literally
+      shrinking from Round 3's 3, but Round 3's were regressions from Round 2's
+      own fix pass, while Round 4's are freshly discovered — different character).
+      Running Round 5 to check convergence.
 
 ## E — Final gate before Phase 0.1
 

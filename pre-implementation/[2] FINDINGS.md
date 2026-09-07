@@ -1348,3 +1348,87 @@ flags that the latter appears, at a glance, to be an inconsistent leftover.
 this evidence" — an open-ended, implementation-specific label (unlike
 `HostnameObservation.source`'s closed three-value set), so a free-form `String` is
 the correct type here, not a missed conversion.
+
+---
+
+## Round 4 — re-verification pass, run 2026-09-07 against commit `0566011`
+
+Per `[3] TODO.md` step D's loop: Round 3 found two SHOULD-FIX-level regressions
+(half-applied fixes), so the exit condition wasn't met and another pass was run
+to confirm those specific corrections landed and nothing else was missed.
+
+**Part 1 (targeted):** confirmed all three Round 3 corrections — PIF-012's
+`TESTING_STRATEGY.md` line, PIF-032's `TODO.md` retention bullet, and PIF-038's
+`ProviderCapabilities` naming — landed correctly and completely in commit
+`85249b0`. No further correction needed on any of the three.
+
+**Part 2 (fresh full pass):** found one new SHOULD-FIX item and two trivial
+WORTH-NOTING items, logged below as PIF-040 through PIF-042. All three fixed
+immediately, commit `1354e73`. Zero new BLOCKING findings.
+
+### At a glance (Round 4 new findings)
+
+| ID | Severity | Status | Summary |
+|---|---|---|---|
+| [PIF-040](#pif-040--rawhttprequestrawhttpresponse-had-no-field-table-or-ownership-tag) | SHOULD-FIX-BEFORE-CODING (blocks Phase 0.4) | Fixed | `RawHTTPRequest`/`RawHTTPResponse` had no field table or ownership tag |
+| [PIF-041](#pif-041--process-layer-status-list-omitted-stale-unlike-the-socket-layer) | WORTH-NOTING | Fixed | Process layer status list omitted `stale`, unlike the socket layer |
+| [PIF-042](#pif-042--mandatory-test-2-used-inconsistent-casing-vs-tests-134) | WORTH-NOTING | Fixed | Mandatory test 2 used inconsistent casing vs. tests 1/3/4 |
+
+### PIF-040 — `RawHTTPRequest`/`RawHTTPResponse` had no field table or ownership tag
+
+| | |
+|---|---|
+| **Status** | Fixed — decided and applied 2026-09-07, commit `1354e73`. Reason: blocks Phase 0.4's very first TODO bullet ("Define `RawHTTPRequest`/`RawHTTPResponse`... per `docs/DATA_MODEL.md`"), which had nothing to define from — no fields, no ownership tag, unlike every other type in the document. Also a wire-contract question, not just internal: this is the object `reveal_raw(request_id)` serializes for "show anyway." |
+| **Severity** | SHOULD-FIX-BEFORE-CODING (blocks Phase 0.4, not Phase 0.1) |
+| **Location** | `docs/[4] DATA_MODEL.md` (`RawHTTPRequest`/`RawHTTPResponse`) vs. `docs/[9] TODO.md` Phase 0.4 vs. `docs/[3] ARCHITECTURE.md` (Engine-owned type list) |
+
+**Issue**
+
+Every other named type in `DATA_MODEL.md` has an explicit `(provider-owned)`/
+`(Engine-owned)` tag and a field table — including types not implemented until
+later phases (`Flow`, `ObservationCapabilities`). `RawHTTPRequest`/`RawHTTPResponse`
+had neither: just prose describing categories of content, no ownership tag, and no
+answer to whether `TrafficProvider` constructs it directly or the Engine assembles
+it from something lower-level.
+
+**Why it matters**
+
+An implementer hits this on Phase 0.4's first bullet with no field list to build
+the struct from, and no answer to whether returning it directly from
+`TrafficProvider`'s trait method is an exception to the provider/Engine
+construction rule or already consistent with it. Guessing wrong means retyping the
+`TrafficProvider` trait signature and the `Redactor`'s input type after Phase
+0.3/0.4 code already depends on it.
+
+**Fix applied**
+
+Tagged `RawHTTPRequest`/`RawHTTPResponse` provider-owned (returned directly from
+`TrafficProvider`, after the mitmproxy addon's tier-1 redaction, consumed — never
+constructed — by the Engine's `Redactor`), and gave both a full field table
+mirroring `HTTPRequest`/`HTTPResponse` minus the post-redaction-only fields
+(`redacted_fields`, `status`, `evidence`). Added both to the "who constructs this
+type" rule's provider-owned list at the bottom of `DATA_MODEL.md`.
+
+---
+
+### PIF-041 — Process layer status list omitted `stale`, unlike the socket layer
+
+| | |
+|---|---|
+| **Status** | Fixed — decided and applied 2026-09-07, commit `1354e73`. Reason: `ProcessInfo.status` is an `ObservationStatus` subject to the same generic staleness formula as everything else; the socket layer's per-layer list explicitly noted `stale` as Engine-added, the process layer's didn't, for no stated reason. Trivial, one line. |
+| **Severity** | WORTH-NOTING |
+| **Location** | `docs/[5] OBSERVATION_CONTRACT.md` ("Applied per layer") |
+
+**Fix applied:** added `stale` to the `processes:` line, matching the socket layer's treatment.
+
+---
+
+### PIF-042 — Mandatory test 2 used inconsistent casing vs. tests 1/3/4
+
+| | |
+|---|---|
+| **Status** | Fixed — decided and applied 2026-09-07, commit `1354e73`. Reason: tests 1, 3, 4 use the capitalized Rust-variant form (`== Closed`, `== Unmatched`) per the document's own stated wire-form/variant-form convention (`DATA_MODEL.md`'s Notation section); test 2 used lowercase. Zero implementation risk either way, but cheap to make consistent. |
+| **Severity** | WORTH-NOTING |
+| **Location** | `docs/[8] TESTING_STRATEGY.md` (mandatory test 2) |
+
+**Fix applied:** capitalized to `lifecycle_state == Expired — never Closed`, matching tests 1/3/4's convention.
