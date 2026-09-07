@@ -782,7 +782,7 @@ mod engine_tests {
     #[test]
     fn real_providers_see_this_test_process() {
         let mut engine = ObservationEngine::new(
-            Box::new(crate::providers::SysinfoProcessProvider),
+            Box::new(crate::providers::SysinfoProcessProvider::new()),
             Box::new(crate::providers::NetstatSocketProvider),
             Arc::new(crate::providers::ReverseDnsProvider),
         );
@@ -815,7 +815,7 @@ mod engine_tests {
         let own_pid = std::process::id();
 
         let mut engine = ObservationEngine::new(
-            Box::new(crate::providers::SysinfoProcessProvider),
+            Box::new(crate::providers::SysinfoProcessProvider::new()),
             Box::new(crate::providers::NetstatSocketProvider),
             Arc::new(crate::providers::ReverseDnsProvider),
         );

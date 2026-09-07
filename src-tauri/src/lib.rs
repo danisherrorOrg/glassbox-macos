@@ -14,7 +14,7 @@ use providers::{NetstatSocketProvider, ReverseDnsProvider, SysinfoProcessProvide
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let engine = ObservationEngine::new(
-        Box::new(SysinfoProcessProvider),
+        Box::new(SysinfoProcessProvider::new()),
         Box::new(NetstatSocketProvider),
         Arc::new(ReverseDnsProvider),
     );

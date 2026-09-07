@@ -10,6 +10,7 @@
 //! `docs/DATA_MODEL.md`'s note on `ProcessObservation` for why.
 
 use std::path::Path;
+use std::sync::Mutex;
 
 use chrono::Utc;
 use sysinfo::System;
@@ -54,12 +55,34 @@ pub trait ProcessProvider: Send + Sync {
     fn snapshot(&self) -> ProcessSnapshot;
 }
 
-pub struct SysinfoProcessProvider;
+/// Holds one `System` across calls, refreshed in place rather than rebuilt
+/// each time — `sysinfo` computes `cpu_usage()` as a delta against the
+/// *previous* refresh of the *same* `System`; a fresh instance every call
+/// has no prior sample and reports ~0% unconditionally. `Mutex`, not
+/// `RefCell`, because `ProcessProvider` requires `Send + Sync` (`&self`,
+/// not `&mut self` — see `docs/ARCHITECTURE.md`).
+pub struct SysinfoProcessProvider {
+    system: Mutex<System>,
+}
+
+impl SysinfoProcessProvider {
+    pub fn new() -> Self {
+        Self {
+            system: Mutex::new(System::new_all()),
+        }
+    }
+}
+
+impl Default for SysinfoProcessProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl ProcessProvider for SysinfoProcessProvider {
     fn snapshot(&self) -> ProcessSnapshot {
         let now = Utc::now();
-        let mut sys = System::new_all();
+        let mut sys = self.system.lock().unwrap();
         sys.refresh_all();
 
         let observations = sys
@@ -97,7 +120,7 @@ impl ProcessProvider for SysinfoProcessProvider {
 
 #[cfg(test)]
 mod tests {
-    use super::derive_name;
+    use super::{derive_name, ProcessProvider, SysinfoProcessProvider};
 
     #[test]
     fn prefers_path_basename_over_truncated_kernel_name() {
@@ -114,5 +137,44 @@ mod tests {
     #[test]
     fn falls_back_to_kernel_name_when_path_unknown() {
         assert_eq!(derive_name(&None, "kernel_task"), "kernel_task");
+    }
+
+    /// Proves the actual root cause, not just that nothing panics: a fresh
+    /// `System` per call has no prior sample, so `cpu_usage()` is always
+    /// ~0% on its first-ever refresh. Persisting one `System` and refreshing
+    /// it again after real CPU work must produce a nonzero delta.
+    #[test]
+    fn cpu_percent_becomes_measurable_after_second_refresh_of_same_instance() {
+        let provider = SysinfoProcessProvider::new();
+        let own_pid = std::process::id();
+
+        let baseline = provider.snapshot();
+        assert!(
+            baseline.observations.iter().any(|p| p.pid == own_pid),
+            "this test's own process should be in the first snapshot"
+        );
+
+        // Burn CPU on this thread so there's a real, measurable delta
+        // between the two refreshes of the same `System` instance.
+        let start = std::time::Instant::now();
+        let mut x: u64 = 0;
+        while start.elapsed() < std::time::Duration::from_millis(300) {
+            x = x.wrapping_add(1);
+        }
+        std::hint::black_box(x);
+
+        let after = provider.snapshot();
+        let cpu = after
+            .observations
+            .iter()
+            .find(|p| p.pid == own_pid)
+            .and_then(|p| p.cpu_percent)
+            .expect("cpu_percent should be Some for our own process");
+
+        assert!(
+            cpu > 0.5,
+            "cpu_percent was {cpu}% after burning CPU for 300ms on the same provider \
+             instance — a fresh System per call (the original bug) would report ~0% here"
+        );
     }
 }
