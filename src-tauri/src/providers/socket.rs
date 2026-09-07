@@ -31,6 +31,8 @@ pub struct NetstatSocketProvider;
 impl SocketProvider for NetstatSocketProvider {
     fn snapshot(&self) -> SocketSnapshot {
         let now = Utc::now();
+        // IPv4/IPv6 only — AF_UNIX (local IPC) is deliberately out of scope
+        // for a network inspector, not an oversight. See DECISIONS.md ADR-016.
         let af_flags = AddressFamilyFlags::IPV4 | AddressFamilyFlags::IPV6;
         let proto_flags = ProtocolFlags::TCP | ProtocolFlags::UDP;
 
