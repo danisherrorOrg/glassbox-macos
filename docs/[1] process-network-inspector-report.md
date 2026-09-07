@@ -55,12 +55,14 @@ The product should never collapse "I can't see the payload" into "I can't see an
 |---|---|---|---|
 | 1 — Process | Who? | `Claude`, PID 9132 | Generally available |
 | 2 — Network | Who is it talking to? | `api.example.com:443`, `localhost:8080` | Where OS visibility permits |
-| 3 — Protocol | How are they talking? | TCP/HTTPS, established, bytes sent/received | Where OS/provider visibility permits |
+| 3 — Protocol | How are they talking? | TCP/HTTPS, established | Where OS/provider visibility permits |
 | 4 — Application payload | What are they saying? | `POST /v1/chat` → `200` | Only where technically observable |
 
 An earlier version of this table said Levels 2–3 were "always available," which quietly contradicted the rest of this document set — socket visibility can legitimately come back `permission_denied`, `unavailable`, or `stale` (see `docs/OBSERVATION_CONTRACT.md`). The product attempts Levels 1–3 wherever technically and legitimately available and explicitly reports when they're not — this table now says that instead of overclaiming it.
 
-A pinned-cert or non-HTTP connection still shows Levels 1–3 in full — "HTTPS, connected, bytes sent/received, contents unavailable" is a legitimate and useful answer, not a failure state. The precise status vocabulary behind this is defined in `docs/OBSERVATION_CONTRACT.md` — see that document for the authoritative list rather than repeating it here, where it's already drifted out of sync once.
+A pinned-cert or non-HTTP connection still shows Levels 1–3 in full — "HTTPS, connected, contents unavailable" is a legitimate and useful answer, not a failure state. The precise status vocabulary behind this is defined in `docs/OBSERVATION_CONTRACT.md` — see that document for the authoritative list rather than repeating it here, where it's already drifted out of sync once.
+
+Per-socket `bytes_sent`/`bytes_received` are explicitly *not* part of that Level-3 example above (Round 1/2 drafts of this table used byte counts as the illustrative Level-3 fact; that was overclaiming). The Phase 0 permissions spike (`docs/PERMISSIONS_AND_PLATFORM.md`) verified that none of `sysinfo`, `netstat2`, or direct `libproc` FFI expose a per-socket byte counter on macOS — it isn't a crate limitation, the kernel structures those APIs read (`in_sockinfo`/`tcp_sockinfo`) simply don't carry one. `SocketObservation.bytes_sent`/`bytes_received` (`docs/DATA_MODEL.md`) stay in the type as `Option<u64>` per the field-level-absence rule, but on macOS via this provider stack they render as "not reported" for every connection, not just some — this is a permanent reduction from what an earlier draft of this report implied, not a temporary gap.
 
 ### Observation Capabilities panel
 

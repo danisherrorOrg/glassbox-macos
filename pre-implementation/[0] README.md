@@ -62,11 +62,13 @@ current ordering.
 
 ## Status at a glance
 
-See `[3] TODO.md` for the live checklist. As of 2026-09-07, steps A–D have run:
+See `[3] TODO.md` for the live checklist. As of 2026-09-07, steps A–D and F have run:
 Round 1 (self-audit) and Round 2 (independent second-model audit) found 37 issues;
 Rounds 3–5 (re-verification passes) found 8 more, several of them fresh drift
 introduced by earlier rounds' own fixes rather than leftovers from the original
-design. All 44 findings (`PIF-001`–`PIF-044`) are resolved — 42 `Fixed`, 1
+design; step F's empirical permissions spike (run directly on this machine, not a
+doc re-read) found 2 more, both stemming from real test results rather than doc
+ambiguity. All 46 findings (`PIF-001`–`PIF-046`) are resolved — 44 `Fixed`, 1
 `Deferred` (`PIF-016`, a cosmetic cross-reference cleanup, intentionally left for
 its own standalone commit), 1 `Not an issue`. **Zero findings are left `Open`, and
 none are `BLOCKING`.** The step D re-verification loop was stopped after Round 5 by
@@ -76,7 +78,22 @@ new BLOCKING findings and the remaining churn had the shape of diminishing-retur
 drift rather than substantive gaps; see `[3] TODO.md` step D's note and
 `[2] FINDINGS.md`'s Round 5 section for the full reasoning.
 
+Step F confirmed same-user process/socket visibility needs no elevation on this
+machine (no fallback to raw `libproc` FFI required for `SocketProvider`), confirmed
+the exact refusal shape for other-users' processes (`EPERM`, errno 1), and found one
+real capability gap: per-socket byte counters are not obtainable via this project's
+documented provider stack on macOS at all — a platform limit, not an implementation
+gap — so the report's Level-3 example was corrected (`PIF-045`). It also surfaced an
+implementation-guidance gap for Phase 0.1: `SocketProvider` can't rely on `netstat2`'s
+own error type to produce `permission_denied` (the crate silently swallows per-PID
+permission failures), and `sysinfo`'s uid isn't reliable enough to make that
+same-user/other-user determination itself (`PIF-046`) — both fixed by adding explicit
+implementation guidance to `docs/[7] PERMISSIONS_AND_PLATFORM.md` rather than a
+contract change, since `OBSERVATION_CONTRACT.md`'s `permission_denied` status was
+already correctly specified. Full method and raw results live in
+`docs/[7] PERMISSIONS_AND_PLATFORM.md`'s "First technical spike" section.
+
 **Not yet done:** step E's owner sign-off (a human read of `[2] FINDINGS.md`
-end-to-end, separate from the checklist having no open boxes) has not happened yet.
-Step F (the empirical permissions spike) also has not started. Both are outstanding
-before `docs/[9] TODO.md` Phase 0.1 begins.
+end-to-end, separate from the checklist having no open boxes) — **this is the only
+thing left before `docs/[9] TODO.md` Phase 0.1 begins**, and it's a human step this
+agent cannot complete on the owner's behalf.

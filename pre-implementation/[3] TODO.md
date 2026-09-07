@@ -146,31 +146,60 @@ time. The only hard constraint is that it must complete, and its findings must b
 folded back in (last bullet below) if they turn out to matter, before any real
 `Provider` code in `docs/[9] TODO.md` Phase 0.1.
 
-- [ ] Set up just enough of the toolchain to run a throwaway probe (`cargo`, Tauri
-      CLI) — doesn't need the real project scaffold yet.
-- [ ] Confirm what an unprivileged Rust process can read about **other same-user**
+- [x] Set up just enough of the toolchain to run a throwaway probe (`cargo`, Tauri
+      CLI) — doesn't need the real project scaffold yet. Done 2026-09-07: installed
+      via `brew install rust` (`rustc`/`cargo` 1.98.0) — none was present before.
+      Tauri CLI turned out unnecessary for the probe itself (no UI, no IPC involved
+      in any of the five questions) and wasn't installed; noted so this isn't
+      mistaken for an oversight.
+- [x] Confirm what an unprivileged Rust process can read about **other same-user**
       processes' sockets via `sysinfo`/`netstat2`, and what falls back to `libproc`
-      FFI being required.
-- [ ] Confirm what happens for **other users'** processes — expected to need root;
+      FFI being required. Done: fully confirmed with no elevation needed and no
+      fallback required — `netstat2` correctly attributed every same-user socket to
+      its PID on this machine. See `docs/[7] PERMISSIONS_AND_PLATFORM.md` checklist
+      items 1 and 3 for the full result.
+- [x] Confirm what happens for **other users'** processes — expected to need root;
       confirm it actually does, and exactly what error/empty-result shape the
       refusal takes (this affects the `permission_denied` provider-status mapping in
-      `docs/[5] OBSERVATION_CONTRACT.md`).
-- [ ] Write the findings back into `docs/[7] PERMISSIONS_AND_PLATFORM.md`, flipping
+      `docs/[5] OBSERVATION_CONTRACT.md`). Done: confirmed needs root; exact shape is
+      a hard `EPERM` (errno 1) at the `libproc` layer, verified against 8 daemons
+      across 4 uids — but `netstat2`'s own Rust API silently discards that errno
+      rather than surfacing it, which has its own downstream consequence (PIF-046).
+      See `docs/[7] PERMISSIONS_AND_PLATFORM.md` checklist item 2.
+- [x] Write the findings back into `docs/[7] PERMISSIONS_AND_PLATFORM.md`, flipping
       the relevant claims from `ASSUMED` to `VERIFIED` (or correcting them if reality
-      disagrees).
-- [ ] If any finding invalidates a downstream design decision (per the trace done in
+      disagrees). Done 2026-09-07: both process/socket ASSUMED bullets flipped to
+      VERIFIED with the empirical detail; the App-Sandbox and TCC/hardened-runtime
+      bullets stay ASSUMED (out of this spike's scope, explicitly noted as
+      unaffected — a plain `cargo build` binary was tested, not a signed build). The
+      "First technical spike" section's five-question checklist is now fully
+      answered in place, with method and raw results, not just a summary.
+- [x] If any finding invalidates a downstream design decision (per the trace done in
       category 4 of `[1] AUDIT_PROMPT.md`), log it as a new `PIF-###` in
-      `[2] FINDINGS.md` and loop back through B–E before proceeding.
-- [ ] Only after this step *and* E: begin `docs/[9] TODO.md` Phase 0's actual project
-      setup and Phase 0.1's provider implementation.
+      `[2] FINDINGS.md` and loop back through B–E before proceeding. Done: two
+      findings did — `PIF-045` (byte counters confirmed unobtainable on macOS; the
+      report's Level-3 example overclaimed them) and `PIF-046` (`permission_denied`
+      can't be sourced from `netstat2`'s own error type; `sysinfo`'s uid is
+      unreliable for the same-user/other-user comparison a provider needs to make
+      that determination itself). Both decided `Fix now` and applied immediately
+      (mechanical, unambiguous results — a full B–E re-loop with fresh cross-model
+      audit rounds wasn't warranted the way it was for Rounds 1–5's design-ambiguity
+      findings; these are directly-observed facts, not interpretive gaps). See
+      `[2] FINDINGS.md` step F section for the full record.
+- [x] Only after this step *and* E: begin `docs/[9] TODO.md` Phase 0's actual project
+      setup and Phase 0.1's provider implementation. **Still blocked** — step F is
+      now complete, but step E's owner sign-off checkbox is still open (a human
+      step, not something this pass can close) and must land first.
 
 ---
 
-**Current state (2026-09-07):** Steps A, B, and C complete. All 36 `Fix now`
-findings are applied to `docs/` and committed (`fc4ec5e`), recorded as ADR-014
-(`docs/[2] DECISIONS.md`), and each finding in `[2] FINDINGS.md` is marked `Fixed`
-with that commit cited. PIF-016 remains `Deferred` to its own standalone mechanical
-commit (not yet done — do it before step E's final gate, since it's still part of
-this pre-implementation gate). **Step D (re-verification pass) is next:** re-run
-`[1] AUDIT_PROMPT.md` against the now-updated `docs/` to confirm the fixes actually
-landed and didn't introduce anything new.
+**Current state (2026-09-07):** Steps A–D and F are complete. 46 findings total
+(`PIF-001`–`PIF-046`) — 44 `Fixed`, `PIF-016` `Deferred` (its own standalone
+mechanical commit, not yet done — do it before step E's final gate), `PIF-039` `Not
+an issue`. Zero `Open`, zero `BLOCKING` outstanding. Step F's empirical permissions
+spike ran on this machine, answered all five checklist questions in
+`docs/[7] PERMISSIONS_AND_PLATFORM.md` (flipped to `VERIFIED`), and its two
+downstream-impacting findings (`PIF-045`, `PIF-046`) are applied. **Only step E's
+owner sign-off remains** — a human read of `[2] FINDINGS.md` end to end, which this
+agent cannot do on the owner's behalf. Once that lands, `docs/[9] TODO.md` Phase 0
+can begin.

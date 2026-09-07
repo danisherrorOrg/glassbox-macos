@@ -1498,3 +1498,109 @@ processing a pair — the map is what `reveal_raw` looks up, not a field on `Raw
 | **Location** | `docs/[1] process-network-inspector-report.md` ("Observation Capabilities panel") vs. `docs/[4] DATA_MODEL.md` (`ObservationCapabilities`) |
 
 **Fix applied:** added a sentence noting the mock's single "HTTP body" row deliberately combines `DATA_MODEL.md`'s two fields for space — a display choice, not a missed field.
+
+---
+
+## Step F — permissions spike (empirical, not a doc audit), run 2026-09-07
+
+Per `[3] TODO.md` step F: this isn't a re-read of `docs/` like Rounds 1–5 — it's a
+throwaway Rust probe (`sysinfo`/`netstat2`/`libproc`, unprivileged, run on this
+machine) answering the five-question checklist `docs/[7] PERMISSIONS_AND_PLATFORM.md`
+already named as `TO VERIFY`. Full method and raw results are recorded directly in
+that document (now flipped from `ASSUMED` to `VERIFIED`); these two findings are the
+two places the results changed downstream doc content, logged here per step F's own
+"if any finding invalidates a downstream design decision" instruction.
+
+### At a glance (Step F findings)
+
+| ID | Severity | Status | Summary |
+|---|---|---|---|
+| [PIF-045](#pif-045--per-socket-byte-counters-confirmed-unavailable-on-macos-reports-level-3-example-overclaimed) | SHOULD-FIX-BEFORE-CODING | Fixed | Per-socket byte counters confirmed unavailable on macOS; report's Level-3 example overclaimed |
+| [PIF-046](#pif-046--permission_denied-cant-come-from-netstat2s-own-error-type-sysinfos-uid-is-unreliable) | SHOULD-FIX-BEFORE-CODING (blocks Phase 0.1) | Fixed | `permission_denied` can't come from `netstat2`'s own error type; `sysinfo`'s uid is unreliable |
+
+### PIF-045 — Per-socket byte counters confirmed unavailable on macOS; report's Level-3 example overclaimed
+
+| | |
+|---|---|
+| **Status** | Fixed — decided and applied 2026-09-07, commit `72cb001`. Reason: this is exactly the negative-(4) contingency `PIF-028`'s fix already wrote into `PERMISSIONS_AND_PLATFORM.md` ("If (4) fails... the report's Level-3 promise is amended to say so"). Cheap, mechanical, and the spike result is unambiguous (structural, not a sampling gap). |
+| **Severity** | SHOULD-FIX-BEFORE-CODING |
+| **Location** | `docs/[1] process-network-inspector-report.md` ("Four levels of visibility") vs. `docs/[7] PERMISSIONS_AND_PLATFORM.md` ("First technical spike," question 4) vs. `docs/[4] DATA_MODEL.md` (`SocketObservation.bytes_sent`/`bytes_received`) |
+
+**Issue**
+
+The report's Level-3 row and its pinned-cert example both used "bytes sent/received"
+as the illustrative fact available at that level. The Phase 0 spike found this isn't
+obtainable at all via this project's documented provider stack (`sysinfo`/
+`netstat2`/direct `libproc` FFI) on macOS: `netstat2::TcpSocketInfo`/`UdpSocketInfo`
+have no byte-count fields, and neither does the raw kernel struct those types wrap
+(`in_sockinfo`/`tcp_sockinfo`, inspected directly via the crate's own `bindgen`
+output against the macOS SDK's `libproc.h`) — confirming this is a platform-API gap,
+not a crate-choice or missing-fallback gap that more `libproc` FFI work could close.
+
+**Why it matters**
+
+Same failure mode `PIF-028` was written to prevent: a report promise the platform
+can't actually back, discovered mid-implementation instead of here. `bytes_sent`/
+`bytes_received` were already `Option<u64>` in `DATA_MODEL.md` (correctly hedged),
+but the report's prose treated them as a normal, expected Level-3 fact rather than a
+field that will read "not reported" on every macOS connection.
+
+**Fix applied**
+
+Removed "bytes sent/received" from the Level-3 table row and the pinned-cert example
+in `docs/[1] process-network-inspector-report.md`; added a paragraph there citing the
+spike result and stating plainly that these two fields render as "not reported" for
+every connection on macOS via this provider stack, not just some — a permanent
+reduction, not a temporary gap. `docs/[7] PERMISSIONS_AND_PLATFORM.md`'s spike-results
+section is the durable record of the underlying test.
+
+---
+
+### PIF-046 — `permission_denied` can't come from `netstat2`'s own error type; `sysinfo`'s uid is unreliable
+
+| | |
+|---|---|
+| **Status** | Fixed — decided and applied 2026-09-07, commit `72cb001`. Reason: directly affects whether `OBSERVATION_CONTRACT.md`'s `permission_denied` status is satisfiable by a `SocketProvider` built naively on top of `netstat2`'s public API — exactly the kind of Phase-0.1-blocking gap step F exists to catch before provider code is written, not after. |
+| **Severity** | SHOULD-FIX-BEFORE-CODING (blocks Phase 0.1) |
+| **Location** | `docs/[7] PERMISSIONS_AND_PLATFORM.md` (new "Implementation guidance" subsection) vs. `docs/[5] OBSERVATION_CONTRACT.md` (`permission_denied`, two-level list-command status) |
+
+**Issue**
+
+Reading `netstat2`'s macOS backend source (vendored under `~/.cargo/registry`,
+`integrations/osx/netstat.rs::iterate_netstat_info`): for each PID it iterates, a
+failed `list_all_fds_for_pid` call — including the `EPERM` a cross-user PID always
+produces (confirmed empirically, see `PERMISSIONS_AND_PLATFORM.md` checklist item 2)
+— is caught and discarded with a bare `continue`. The crate's public
+`get_sockets_info()` therefore returns the *same shape* (that PID just absent from
+the results) whether the target PID had zero sockets or was denied entirely.
+Separately, the spike found `sysinfo::Process::user_id()` unreliable as a way to even
+identify which case applies: it reported `uid=0` for a process this machine's own
+`ps` confirms is owned by uid `501` (this machine's per-user `loginwindow`), and
+returned no uid at all for 268 of 666 processes on this run.
+
+**Why it matters**
+
+`OBSERVATION_CONTRACT.md` names `permission_denied` as a status a provider "can
+legitimately assert about its own call" — but a `SocketProvider` written to just
+forward whatever `netstat2::get_sockets_info()` returns has no signal to assert it
+from, for `get_connections(pid)` targeting another user's process it would silently
+return an empty/absent result instead of the correct outer-level `permission_denied`
+status the two-level list-command contract requires. This is exactly the silent
+empty-array-means-unknown inference `OBSERVATION_CONTRACT.md`'s "one rule" section
+already forbids, reappearing one layer lower, at the crate boundary instead of the
+provider's own code.
+
+**Fix applied**
+
+Added an "Implementation guidance for `SocketProvider`/`ProcessProvider`" subsection
+to `docs/[7] PERMISSIONS_AND_PLATFORM.md` directing Phase 0.1 implementation to: (1)
+derive `permission_denied` for a targeted PID by comparing owning uid against the
+current process's own uid *before* calling into `netstat2`, not by inspecting
+`netstat2`'s return value; (2) source that uid comparison from direct `libproc`
+(`proc_pidinfo(PROC_PIDTBSDINFO)`'s `pbi_uid`, the same source `ps`/`lsof` use), not
+`sysinfo::Process::user_id()`; (3) treat different `libproc` calls as having
+independent privilege boundaries rather than one uniform "libproc" bucket — the spike
+found `proc_pidpath()` unprivileged-accessible against processes `PROC_PIDLISTFDS`
+was denied for. No `OBSERVATION_CONTRACT.md` change needed — its `permission_denied`
+contract was already correct; what was missing was implementation-level guidance for
+how a `SocketProvider` built on the documented crate set actually satisfies it.
