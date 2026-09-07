@@ -1522,7 +1522,7 @@ two places the results changed downstream doc content, logged here per step F's 
 
 | | |
 |---|---|
-| **Status** | Fixed — decided and applied 2026-09-07, commit `72cb001`. Reason: this is exactly the negative-(4) contingency `PIF-028`'s fix already wrote into `PERMISSIONS_AND_PLATFORM.md` ("If (4) fails... the report's Level-3 promise is amended to say so"). Cheap, mechanical, and the spike result is unambiguous (structural, not a sampling gap). |
+| **Status** | Fixed — decided and applied 2026-09-07, commit `b71f8c4`. Reason: this is exactly the negative-(4) contingency `PIF-028`'s fix already wrote into `PERMISSIONS_AND_PLATFORM.md` ("If (4) fails... the report's Level-3 promise is amended to say so"). Cheap, mechanical, and the spike result is unambiguous (structural, not a sampling gap). |
 | **Severity** | SHOULD-FIX-BEFORE-CODING |
 | **Location** | `docs/[1] process-network-inspector-report.md` ("Four levels of visibility") vs. `docs/[7] PERMISSIONS_AND_PLATFORM.md` ("First technical spike," question 4) vs. `docs/[4] DATA_MODEL.md` (`SocketObservation.bytes_sent`/`bytes_received`) |
 
@@ -1560,7 +1560,7 @@ section is the durable record of the underlying test.
 
 | | |
 |---|---|
-| **Status** | Fixed — decided and applied 2026-09-07, commit `72cb001`. Reason: directly affects whether `OBSERVATION_CONTRACT.md`'s `permission_denied` status is satisfiable by a `SocketProvider` built naively on top of `netstat2`'s public API — exactly the kind of Phase-0.1-blocking gap step F exists to catch before provider code is written, not after. |
+| **Status** | Fixed — decided and applied 2026-09-07, commit `b71f8c4`. Reason: directly affects whether `OBSERVATION_CONTRACT.md`'s `permission_denied` status is satisfiable by a `SocketProvider` built naively on top of `netstat2`'s public API — exactly the kind of Phase-0.1-blocking gap step F exists to catch before provider code is written, not after. |
 | **Severity** | SHOULD-FIX-BEFORE-CODING (blocks Phase 0.1) |
 | **Location** | `docs/[7] PERMISSIONS_AND_PLATFORM.md` (new "Implementation guidance" subsection) vs. `docs/[5] OBSERVATION_CONTRACT.md` (`permission_denied`, two-level list-command status) |
 
